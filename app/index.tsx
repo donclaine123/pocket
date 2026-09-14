@@ -132,7 +132,7 @@ export default function HomeScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const isCompact = windowWidth < 360;
   const isVeryCompact = windowWidth < 340;
-  const horizontalPad = isCompact ? 12 : 20;
+  const horizontalPad = isVeryCompact ? 16 : isCompact ? 20 : 26;
 
   const [txns, setTxns] = useState<Txn[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -1590,14 +1590,15 @@ export default function HomeScreen() {
         renderItem={renderFeedItem}
         keyExtractor={(item) => item.id}
         getItemType={(item) => item.type}
+        alwaysBounceVertical={true}
         showsVerticalScrollIndicator={false}
         style={{ flex: 1, width: "100%" }}
         contentContainerStyle={[
           styles.scrollContent,
           {
             paddingHorizontal: horizontalPad,
-            paddingBottom: insets.bottom + 110,
-            minHeight: "100%",
+            paddingBottom: insets.bottom + 140,
+            flexGrow: 1,
           },
         ]}
         ListHeaderComponent={renderListHeader}
@@ -2620,6 +2621,7 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: COLORS.cardBorder,
     padding: 16,
+    marginHorizontal: 4,
     marginTop: 12,
     transform: [{ rotate: "-1deg" }],
   },

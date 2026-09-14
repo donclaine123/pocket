@@ -132,7 +132,7 @@ export default function HomeScreen() {
   const { width: windowWidth } = useWindowDimensions();
   const isCompact = windowWidth < 360;
   const isVeryCompact = windowWidth < 340;
-  const horizontalPad = isVeryCompact ? 16 : isCompact ? 20 : 26;
+  const horizontalPad = isVeryCompact ? 16 : isCompact ? 22 : 28;
 
   const [txns, setTxns] = useState<Txn[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -1169,11 +1169,13 @@ export default function HomeScreen() {
   };
 
   const renderListFooter = () => (
-    <View style={styles.quoteCard}>
-      <Text style={styles.quoteText}>
-        "a steady little habit beats a big reset."
-      </Text>
-      <Text style={styles.quoteAuthor}>— the pocket ledger</Text>
+    <View style={{ paddingBottom: 100 }}>
+      <View style={styles.quoteCard}>
+        <Text style={styles.quoteText}>
+          "a steady little habit beats a big reset."
+        </Text>
+        <Text style={styles.quoteAuthor}>— the pocket ledger</Text>
+      </View>
     </View>
   );
 
@@ -1593,14 +1595,11 @@ export default function HomeScreen() {
         alwaysBounceVertical={true}
         showsVerticalScrollIndicator={false}
         style={{ flex: 1, width: "100%" }}
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingHorizontal: horizontalPad,
-            paddingBottom: insets.bottom + 140,
-            flexGrow: 1,
-          },
-        ]}
+        contentContainerStyle={{
+          ...styles.scrollContent,
+          paddingHorizontal: horizontalPad,
+          paddingBottom: insets.bottom + 140,
+        }}
         ListHeaderComponent={renderListHeader}
         ListEmptyComponent={renderListEmpty}
         ListFooterComponent={renderListFooter}

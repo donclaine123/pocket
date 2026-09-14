@@ -25,6 +25,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { CURRENCIES, CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
@@ -48,7 +49,9 @@ export function SettingsModal({
   onSelectCurrency,
 }: SettingsModalProps) {
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const currentVersion = Constants.expoConfig?.version ?? "1.0.0";
+  const modalCardHeight = Math.min(Math.round(windowHeight * 0.75), 580);
 
   // Sub-view: Currency picker
   const [showCurrencyPicker, setShowCurrencyPicker] = useState(false);
@@ -134,7 +137,7 @@ export function SettingsModal({
       >
         <Pressable style={styles.modalBackdrop} onPress={handleClose} />
 
-        <View style={styles.modalCard}>
+        <View style={[styles.modalCard, { height: modalCardHeight }]}>
           {showCurrencyPicker ? (
             /* ============================================================= */
             /* SUB-VIEW: CURRENCY PICKER                                    */
@@ -564,8 +567,6 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 2,
     borderColor: COLORS.cardBorder,
-    height: "80%",
-    maxHeight: "80%",
     overflow: "hidden",
     ...Platform.select({
       ios: {

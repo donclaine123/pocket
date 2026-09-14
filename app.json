@@ -1,13 +1,13 @@
 {
   "expo": {
-    "name": "pocket.",
+    "name": "Pocket",
     "slug": "pocket-penny-journal",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./public/icons/icon-512.png",
     "scheme": "pocket",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
+    "newArchEnabled": false,
     "splash": {
       "image": "./public/icons/icon-512.png",
       "resizeMode": "contain",
@@ -37,6 +37,14 @@
     },
     "plugins": [
       "expo-router"
-    ]
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "2d58d71f-d419-4e6e-9d5e-efb68188b1b0"
+      }
+    }
   }
 }

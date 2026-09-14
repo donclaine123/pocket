@@ -198,6 +198,7 @@ export function SettingsModal({
 
               {/* Currency List */}
               <ScrollView
+                style={{ flex: 1 }}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.currencyListContent}
               >
@@ -282,6 +283,7 @@ export function SettingsModal({
               </View>
 
               <ScrollView
+                style={{ flex: 1 }}
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.scrollContent}
               >
@@ -562,7 +564,8 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 2,
     borderColor: COLORS.cardBorder,
-    maxHeight: "82%",
+    height: "80%",
+    maxHeight: "80%",
     overflow: "hidden",
     ...Platform.select({
       ios: {

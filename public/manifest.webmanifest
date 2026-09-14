@@ -1,0 +1,16 @@
+{
+  "name": "pocket. — penny journal",
+  "short_name": "pocket.",
+  "description": "A cozy little money diary to track your income, spending, and balance.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#faf3e7",
+  "theme_color": "#f4987e",
+  "icons": [
+    { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

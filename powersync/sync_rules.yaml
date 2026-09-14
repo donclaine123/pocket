@@ -1,0 +1,13 @@
+# ==============================================================================
+# POCKET PENNY JOURNAL - POWERSYNC SYNC RULES
+# Paste these rules into your PowerSync Dashboard (https://powersync.com)
+# ==============================================================================
+
+bucket_definitions:
+  # User transactions partition
+  # Each authenticated user only downloads transactions that belong to them
+  user_transactions:
+    parameters:
+      - SELECT request.user_id() AS current_user_id
+    data:
+      - SELECT * FROM public.transactions WHERE user_id = current_user_id

@@ -1,0 +1,42 @@
+{
+  "expo": {
+    "name": "pocket.",
+    "slug": "pocket-penny-journal",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./public/icons/icon-512.png",
+    "scheme": "pocket",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./public/icons/icon-512.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#F7F0E3"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.pocket.pennyjournal"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./public/icons/icon-512.png",
+        "backgroundColor": "#F7F0E3"
+      },
+      "package": "com.pocket.pennyjournal"
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./public/favicon.png"
+    },
+    "updates": {
+      "checkAutomatically": "ON_LOAD",
+      "fallbackToCacheTimeout": 0
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "plugins": [
+      "expo-router"
+    ]
+  }
+}

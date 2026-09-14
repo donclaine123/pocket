@@ -18,13 +18,23 @@ export function getAppVersionInfo(): {
   isEmbedded: boolean;
   isSupported: boolean;
 } {
-  return {
-    version: Updates.runtimeVersion ?? "1.0.0",
-    updateId: Updates.updateId ?? null,
-    channel: Updates.channel ?? null,
-    isEmbedded: Updates.isEmbeddedLaunch,
-    isSupported: Updates.isEnabled && Platform.OS !== "web" && !__DEV__,
-  };
+  try {
+    return {
+      version: Updates?.runtimeVersion ?? "1.0.0",
+      updateId: Updates?.updateId ?? null,
+      channel: Updates?.channel ?? null,
+      isEmbedded: Boolean(Updates?.isEmbeddedLaunch),
+      isSupported: Boolean(Updates?.isEnabled && Platform.OS !== "web" && !__DEV__),
+    };
+  } catch {
+    return {
+      version: "1.0.0",
+      updateId: null,
+      channel: null,
+      isEmbedded: true,
+      isSupported: false,
+    };
+  }
 }
 
 /**
@@ -32,18 +42,17 @@ export function getAppVersionInfo(): {
  * In development, Expo Go, or Web, safely reports that the app is on the latest code.
  */
 export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
-  const version = Updates.runtimeVersion ?? "1.0.0";
-
-  // Updates are only active in production builds on iOS/Android
-  if (!Updates.isEnabled || Platform.OS === "web" || __DEV__) {
-    return {
-      isAvailable: false,
-      isEnabled: false,
-      version,
-    };
-  }
+  const version = Updates?.runtimeVersion ?? "1.0.0";
 
   try {
+    if (!Updates?.isEnabled || Platform.OS === "web" || __DEV__) {
+      return {
+        isAvailable: false,
+        isEnabled: false,
+        version,
+      };
+    }
+
     const update = await Updates.checkForUpdateAsync();
     return {
       isAvailable: update.isAvailable,
@@ -54,7 +63,7 @@ export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
     console.warn("[UpdateService] Check update error:", error);
     return {
       isAvailable: false,
-      isEnabled: true,
+      isEnabled: false,
       version,
       error: error?.message || "Failed to check for updates",
     };

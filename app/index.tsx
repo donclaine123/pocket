@@ -195,11 +195,15 @@ export default function HomeScreen() {
 
   // Check for updates silently in the background on startup
   useEffect(() => {
-    checkForAppUpdate().then((res) => {
-      if (res.isAvailable) {
-        setShowUpdateModal(true);
-      }
-    });
+    checkForAppUpdate()
+      .then((res) => {
+        if (res && res.isAvailable) {
+          setShowUpdateModal(true);
+        }
+      })
+      .catch((err) => {
+        console.warn("[Index] Silent update check error:", err);
+      });
   }, []);
 
   // Animate Opening Scene entrance & Auto-redirect after ~2.2s

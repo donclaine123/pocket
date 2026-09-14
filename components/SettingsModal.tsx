@@ -32,6 +32,7 @@ import { COLORS, FONTS } from "../constants/theme";
 import { safeHaptic } from "../services/haptics";
 import { checkForAppUpdate } from "../services/updateService";
 import { UpdateModal } from "./UpdateModal";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface SettingsModalProps {
   visible: boolean;
@@ -46,6 +47,7 @@ export function SettingsModal({
   currency = DEFAULT_CURRENCY,
   onSelectCurrency,
 }: SettingsModalProps) {
+  const insets = useSafeAreaInsets();
   const currentVersion = Constants.expoConfig?.version ?? "1.0.0";
 
   // Sub-view: Currency picker
@@ -121,7 +123,15 @@ export function SettingsModal({
       animationType="fade"
       onRequestClose={handleClose}
     >
-      <View style={styles.modalOverlay}>
+      <View
+        style={[
+          styles.modalOverlay,
+          {
+            paddingTop: insets.top + 16,
+            paddingBottom: insets.bottom + 20,
+          },
+        ]}
+      >
         <Pressable style={styles.modalBackdrop} onPress={handleClose} />
 
         <View style={styles.modalCard}>
@@ -552,7 +562,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     borderWidth: 2,
     borderColor: COLORS.cardBorder,
-    maxHeight: "88%",
+    maxHeight: "82%",
     overflow: "hidden",
     ...Platform.select({
       ios: {

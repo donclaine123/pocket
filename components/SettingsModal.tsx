@@ -123,7 +123,7 @@ export function SettingsModal({
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={handleClose}
     >
       <View

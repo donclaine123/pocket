@@ -58,7 +58,7 @@ export function UpdateModal({ visible, onClose, newVersion = "latest" }: UpdateM
     <Modal
       visible={visible}
       transparent
-      animationType="fade"
+      animationType="none"
       onRequestClose={onClose}
     >
       <View style={styles.backdrop}>

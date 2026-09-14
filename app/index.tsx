@@ -1622,7 +1622,7 @@ export default function HomeScreen() {
       {/* Add / Edit Entry Modal */}
       <Modal
         visible={modalVisible}
-        animationType="slide"
+        animationType="none"
         transparent={true}
         onRequestClose={() => setModalVisible(false)}
       >
@@ -1854,7 +1854,7 @@ export default function HomeScreen() {
       <Modal
         visible={deleteConfirmTxn !== null}
         transparent={true}
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setDeleteConfirmTxn(null)}
       >
         <View style={styles.confirmModalOverlay}>
@@ -1894,7 +1894,7 @@ export default function HomeScreen() {
       <Modal
         visible={showResetConfirm}
         transparent={true}
-        animationType="fade"
+        animationType="none"
         onRequestClose={() => setShowResetConfirm(false)}
       >
         <View style={styles.confirmModalOverlay}>

@@ -11,7 +11,6 @@ import {
   ShieldCheck,
   Smartphone,
   Sparkles,
-  Vibrate,
   X,
 } from "lucide-react-native";
 import React, { useMemo, useState } from "react";
@@ -22,7 +21,6 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   useWindowDimensions,
@@ -65,8 +63,6 @@ export function SettingsModal({
   } | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
 
-  // Preference toggles
-  const [hapticsEnabled, setHapticsEnabled] = useState(true);
 
   const filteredCurrencies = useMemo(() => {
     const q = currencySearch.trim().toLowerCase();
@@ -106,10 +102,6 @@ export function SettingsModal({
     }
   };
 
-  const toggleHaptics = (val: boolean) => {
-    if (val) safeHaptic.selection();
-    setHapticsEnabled(val);
-  };
 
   const handleClose = () => {
     setShowCurrencyPicker(false);
@@ -327,25 +319,6 @@ export function SettingsModal({
                 <View style={styles.sectionGroup}>
                   <Text style={styles.sectionEyebrow}>PREFERENCES</Text>
                   <View style={styles.groupCard}>
-                    {/* Haptic Feedback Toggle */}
-                    <View style={styles.settingItemRow}>
-                      <View style={[styles.settingIconBox, { backgroundColor: "#FFF0EB" }]}>
-                        <Vibrate size={15} color="#D35433" strokeWidth={2.2} />
-                      </View>
-                      <View style={styles.settingTextCol}>
-                        <Text style={styles.settingTitle}>Haptic Feedback</Text>
-                        <Text style={styles.settingDesc}>Tactile vibration on taps & entries</Text>
-                      </View>
-                      <Switch
-                        value={hapticsEnabled}
-                        onValueChange={toggleHaptics}
-                        trackColor={{ false: COLORS.inkMuted, true: COLORS.mint }}
-                        thumbColor={COLORS.cream}
-                      />
-                    </View>
-
-                    <View style={styles.rowDivider} />
-
                     {/* Default Currency Selector */}
                     <Pressable
                       onPress={() => {

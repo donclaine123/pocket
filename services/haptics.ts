@@ -1,40 +1,11 @@
-import * as Haptics from "expo-haptics";
-import { Platform } from "react-native";
-
+/**
+ * Haptics completely disabled per user preference.
+ * All haptic calls are safe no-ops to ensure 100% silent and vibration-free interaction.
+ */
 export const safeHaptic = {
-  impact: async (style = Haptics.ImpactFeedbackStyle.Medium) => {
-    if (Platform.OS !== "web") {
-      try {
-        await Haptics.impactAsync(style);
-      } catch {}
-    }
-  },
-  light: async () => {
-    if (Platform.OS !== "web") {
-      try {
-        await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      } catch {}
-    }
-  },
-  success: async () => {
-    if (Platform.OS !== "web") {
-      try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      } catch {}
-    }
-  },
-  warning: async () => {
-    if (Platform.OS !== "web") {
-      try {
-        await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-      } catch {}
-    }
-  },
-  selection: async () => {
-    if (Platform.OS !== "web") {
-      try {
-        await Haptics.selectionAsync();
-      } catch {}
-    }
-  },
+  impact: async (_style?: any) => {},
+  light: async () => {},
+  success: async () => {},
+  warning: async () => {},
+  selection: async () => {},
 };

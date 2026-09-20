@@ -35,7 +35,7 @@
   * ✈️ **Travel**
   * 💼 **Salary** & Earnings
   * 🍪 **Snacks** & Food
-* **Haptic Tactility**: Enjoy subtle physical vibrations on taps, saves, and deletions for an authentic paper-notebook feel.
+* **Silent & Distraction-Free**: Clean, quiet interactions without disruptive device buzzes or vibration noise.
 
 ### 📅 3. Flexible 4-Stage Timeframe Views
 Switch effortlessly between different perspectives on your money:
@@ -81,8 +81,7 @@ Switch effortlessly between different perspectives on your money:
 | **List Virtualization** | **[Shopify FlashList](https://shopify.github.io/flash-list/)** | 60 FPS cell recycling handling 10,000+ entries with flat $O(1)$ memory |
 | **Local Storage** | **[Expo SQLite](https://docs.expo.dev/versions/latest/sdk/sqlite/)** & **AsyncStorage** | Instant 0ms reads and writes with 100% offline persistence |
 | **Cloud & Sync** | **[Supabase](https://supabase.com/)** & **[PowerSync](https://www.powersync.com/)** | Relational PostgreSQL with Row-Level Security (RLS) & local-first sync |
-| **Auto-Updates** | **[expo-updates](https://docs.expo.dev/versions/latest/sdk/updates/)** | Seamless in-place OTA updates without erasing guest data |
-| **Haptics & Hardware** | **`expo-haptics`** & **`expo-secure-store`** | Tactile vibrations and encrypted biometric auth storage |
+| **Security & Auth** | **`expo-secure-store`** | Encrypted session token storage and biometric safety |
 | **Typography & Icons** | **Google Fonts** (Fredoka & DM Sans) & **[Lucide](https://lucide.dev/)** | Signature neobrutalist typography and cozy iconography |
 | **Build & Packaging** | **[EAS Build](https://expo.dev/eas)** | Standalone Android APK builds and distribution |
 

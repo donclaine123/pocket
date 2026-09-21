@@ -1,4 +1,4 @@
-import { Check, CircleAlert, Cloud, CloudOff, Lock, LogOut, Mail, RefreshCw, X } from "lucide-react-native";
+import { Check, CircleAlert, Cloud, CloudOff, Lock, LogOut, Mail, X } from "lucide-react-native";
 import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
@@ -15,8 +15,6 @@ import {
 import { COLORS, FONTS, STYLES } from "../constants/theme";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { safeHaptic } from "../services/haptics";
-import { checkForAppUpdate } from "../services/updateService";
-import { UpdateModal } from "./UpdateModal";
 
 type CloudSyncModalProps = {
   visible: boolean;
@@ -48,29 +46,7 @@ export function CloudSyncModal({
     passwordMismatch?: boolean;
   }>({});
 
-  // In-app update check state
-  const [checkingUpdate, setCheckingUpdate] = useState(false);
-  const [updateNotice, setUpdateNotice] = useState<string | null>(null);
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
 
-  const handleCheckUpdates = async () => {
-    safeHaptic.selection();
-    setCheckingUpdate(true);
-    setUpdateNotice(null);
-    try {
-      const res = await checkForAppUpdate();
-      setCheckingUpdate(false);
-      if (res.isAvailable) {
-        setShowUpdateModal(true);
-      } else {
-        setUpdateNotice("✿ You're on the latest version! Guest data is 100% safe.");
-        safeHaptic.light();
-      }
-    } catch {
-      setCheckingUpdate(false);
-      setUpdateNotice("✿ You're on the latest version! Guest data is 100% safe.");
-    }
-  };
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
 
@@ -665,39 +641,9 @@ export function CloudSyncModal({
                   ✿ No account required: Pocket works completely offline on your device. Creating an account is only needed if you'd like to back up your journal and view it on other phones or computers.
                 </Text>
 
-                {/* App Version & In-App Updates (Zero Data Loss) */}
-                <View style={styles.appUpdateSection}>
-                  <View style={styles.appUpdateLeft}>
-                    <Text style={styles.appVersionTitle}>Pocket Penny Journal</Text>
-                    <Text style={styles.appVersionBadge}>v1.0.0 · Auto-Update Ready</Text>
-                  </View>
-                  <Pressable
-                    onPress={handleCheckUpdates}
-                    disabled={checkingUpdate}
-                    style={styles.checkUpdateBtn}
-                    hitSlop={6}
-                  >
-                    {checkingUpdate ? (
-                      <ActivityIndicator size="small" color={COLORS.ink} />
-                    ) : (
-                      <>
-                        <RefreshCw size={11} color={COLORS.ink} />
-                        <Text style={styles.checkUpdateBtnText}>Check updates</Text>
-                      </>
-                    )}
-                  </Pressable>
-                </View>
-                {updateNotice ? (
-                  <Text style={styles.updateNoticeText}>{updateNotice}</Text>
-                ) : null}
               </View>
             )}
           </ScrollView>
-
-          <UpdateModal
-            visible={showUpdateModal}
-            onClose={() => setShowUpdateModal(false)}
-          />
         </View>
       </KeyboardAvoidingView>
     </Modal>
@@ -1015,55 +961,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
-  appUpdateSection: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    marginTop: 16,
-    paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: COLORS.cardBorder,
-  },
-  appUpdateLeft: {
-    flex: 1,
-  },
-  appVersionTitle: {
-    fontFamily: FONTS.bodyBold,
-    fontSize: 12,
-    color: COLORS.ink,
-  },
-  appVersionBadge: {
-    fontFamily: FONTS.body,
-    fontSize: 10.5,
-    color: COLORS.inkSoft,
-    marginTop: 2,
-  },
-  checkUpdateBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 5,
-    backgroundColor: COLORS.cream,
-    borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    shadowColor: COLORS.ink,
-    shadowOffset: { width: 1, height: 1 },
-    shadowOpacity: 0.1,
-    shadowRadius: 0,
-    elevation: 1,
-  },
-  checkUpdateBtnText: {
-    fontFamily: FONTS.bodyBold,
-    fontSize: 11,
-    color: COLORS.ink,
-  },
-  updateNoticeText: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 11,
-    color: "#2D8C65",
-    textAlign: "center",
-    marginTop: 8,
-  },
+
 });

@@ -25,7 +25,7 @@ export const STYLES = StyleSheet.create({
   card: {
     backgroundColor: COLORS.cream,
     borderRadius: 24,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: COLORS.cardBorder,
     padding: 20,
     ...Platform.select({
@@ -35,6 +35,9 @@ export const STYLES = StyleSheet.create({
         shadowOpacity: 1,
         shadowRadius: 0,
       },
+      web: {
+        boxShadow: "3px 4px 0px #3B3330",
+      },
       android: {
         elevation: 4,
       },
@@ -42,42 +45,34 @@ export const STYLES = StyleSheet.create({
   },
   chip: {
     borderRadius: 9999,
-    borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
+    borderWidth: 1,
+    borderColor: "rgba(59, 51, 48, 0.2)",
     paddingHorizontal: 14,
-    paddingVertical: 8,
+    paddingVertical: 7,
     flexDirection: "row",
     alignItems: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.ink,
-        shadowOffset: { width: 2, height: 2 },
-        shadowOpacity: 1,
-        shadowRadius: 0,
-      },
-      android: {
-        elevation: 2,
-      },
-    }),
   },
   buttonPrimary: {
     backgroundColor: COLORS.peach,
     borderRadius: 9999,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: COLORS.cardBorder,
-    paddingVertical: 16,
-    paddingHorizontal: 24,
+    paddingVertical: 14,
+    paddingHorizontal: 26,
     alignItems: "center",
     justifyContent: "center",
     ...Platform.select({
       ios: {
         shadowColor: COLORS.ink,
-        shadowOffset: { width: 3, height: 4 },
+        shadowOffset: { width: 2, height: 4 },
         shadowOpacity: 1,
         shadowRadius: 0,
       },
+      web: {
+        boxShadow: "2px 4px 0px #3B3330",
+      },
       android: {
-        elevation: 4,
+        elevation: 5,
       },
     }),
   },

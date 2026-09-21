@@ -1,5 +1,6 @@
 import Constants from "expo-constants";
 import {
+  ArrowLeftRight,
   Check,
   ChevronLeft,
   ChevronRight,
@@ -38,6 +39,8 @@ interface SettingsModalProps {
   onClose: () => void;
   currency?: CurrencyOption;
   onSelectCurrency?: (currency: CurrencyOption) => void;
+  liveConversionEnabled?: boolean;
+  onToggleLiveConversion?: (enabled: boolean) => void;
 }
 
 export function SettingsModal({
@@ -45,6 +48,8 @@ export function SettingsModal({
   onClose,
   currency = DEFAULT_CURRENCY,
   onSelectCurrency,
+  liveConversionEnabled = true,
+  onToggleLiveConversion,
 }: SettingsModalProps) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
@@ -346,6 +351,47 @@ export function SettingsModal({
                           {currency.symbol} {currency.code}
                         </Text>
                         <ChevronRight size={13} color={COLORS.inkSoft} strokeWidth={2.4} />
+                      </View>
+                    </Pressable>
+
+                    <View style={styles.rowDivider} />
+
+                    {/* Live Rate Conversion Toggle */}
+                    <Pressable
+                      onPress={() => {
+                        safeHaptic.selection();
+                        onToggleLiveConversion?.(!liveConversionEnabled);
+                      }}
+                      style={({ pressed }) => [
+                        styles.settingItemRow,
+                        pressed && { opacity: 0.72 },
+                      ]}
+                      accessibilityRole="switch"
+                      accessibilityLabel="Live Currency Conversion"
+                    >
+                      <View style={[styles.settingIconBox, { backgroundColor: "#EBF3FE" }]}>
+                        <ArrowLeftRight size={15} color="#2563EB" strokeWidth={2.2} />
+                      </View>
+                      <View style={styles.settingTextCol}>
+                        <Text style={styles.settingTitle}>Live Conversion</Text>
+                        <Text style={styles.settingDesc}>
+                          {liveConversionEnabled
+                            ? "Converts amounts using live market rates"
+                            : "Changes symbol only (keeps raw amount)"}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.toggleSwitchTrack,
+                          liveConversionEnabled && styles.toggleSwitchTrackActive,
+                        ]}
+                      >
+                        <View
+                          style={[
+                            styles.toggleSwitchThumb,
+                            liveConversionEnabled && styles.toggleSwitchThumbActive,
+                          ]}
+                        />
                       </View>
                     </Pressable>
                   </View>
@@ -952,6 +998,31 @@ const styles = StyleSheet.create({
     height: 1,
     backgroundColor: COLORS.inkMuted,
     marginVertical: 10,
+  },
+  toggleSwitchTrack: {
+    width: 44,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: COLORS.inkMuted,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+    padding: 2,
+    justifyContent: "center",
+  },
+  toggleSwitchTrackActive: {
+    backgroundColor: COLORS.mint,
+  },
+  toggleSwitchThumb: {
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: COLORS.cream,
+    borderWidth: 1.2,
+    borderColor: COLORS.cardBorder,
+  },
+  toggleSwitchThumbActive: {
+    alignSelf: "flex-end",
+    backgroundColor: COLORS.cream,
   },
 
   // Guarantee Banner

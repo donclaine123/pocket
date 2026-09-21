@@ -2,30 +2,43 @@
 import {
   Archive,
   ArrowDownLeft,
+  ArrowLeftRight,
   ArrowUpRight,
+  BookOpen,
   Calendar,
   Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   CircleAlert,
   Clock,
   Cloud,
+  Coins,
   Edit2,
   Filter,
+  PieChart,
+  PiggyBank,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Settings,
+  ShieldCheck,
+  Smartphone,
+  Smile,
+  Sparkles,
   Sun,
   Trash2,
   X,
 } from "lucide-react-native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Animated,
   KeyboardAvoidingView,
   Modal,
+  PanResponder,
   Platform,
   Pressable,
   ScrollView,
@@ -37,9 +50,12 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
+import Constants from "expo-constants";
 import { COLORS, FONTS, STYLES } from "../constants/theme";
+import { NeoCard } from "../components/NeoCard";
+import { InsightsDonutChart, getCategorySliceColor } from "../components/InsightsDonutChart";
+import Svg, { Line, Path } from "react-native-svg";
 import { CloudSyncModal } from "../components/CloudSyncModal";
-import { SettingsModal } from "../components/SettingsModal";
 import { UpdateModal } from "../components/UpdateModal";
 import { supabase } from "../database/supabase";
 import { FlashList } from "@shopify/flash-list";
@@ -55,6 +71,13 @@ import {
   isDateInRange,
   toISODate,
 } from "../services/dateUtils";
+import {
+  convertAmount,
+  getCachedRates,
+  loadConversionEnabled,
+  refreshExchangeRates,
+  saveConversionEnabled,
+} from "../services/exchangeService";
 import { safeHaptic } from "../services/haptics";
 import {
   clearTransactions,
@@ -64,11 +87,14 @@ import {
   saveSavedCurrency,
   saveTransactions,
 } from "../services/storage";
-import { CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
+import { CURRENCIES, CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
 import {
+  ALL_CATEGORIES,
   CATEGORIES,
   Category,
   CategoryKey,
+  EXPENSE_CATEGORIES,
+  INCOME_CATEGORIES,
   Txn,
   TxnType,
 } from "../types/transaction";
@@ -82,6 +108,11 @@ function fmt(n: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   });
+}
+
+function getCurrencySymbol(code: string): string {
+  const found = CURRENCIES.find((c) => c.code === code);
+  return found ? found.symbol : code;
 }
 
 function getTodayISO(): string {
@@ -106,6 +137,17 @@ function getCategoryColor(bg: Category["bg"]) {
     default:
       return { bg: COLORS.butter, text: COLORS.ink };
   }
+}
+
+function formatShortDate(dateStr: string): string {
+  try {
+    const parts = dateStr.split("-");
+    if (parts.length === 3) {
+      const d = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+      return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    }
+  } catch {}
+  return dateStr;
 }
 
 type FeedItem =
@@ -138,9 +180,13 @@ export default function HomeScreen() {
   const [loaded, setLoaded] = useState(false);
   const scrollRef = useRef<any>(null);
 
+  // Bottom Navigation Tab State
+  const [activeBottomTab, setActiveBottomTab] = useState<"journal" | "insights" | "piggy" | "me">("journal");
+
   // Timeframe & Period Navigation
-  const [timeframeMode, setTimeframeMode] = useState<TimeframeMode>("month");
+  const [timeframeMode, setTimeframeMode] = useState<TimeframeMode>("daily");
   const [periodOffset, setPeriodOffset] = useState<number>(0);
+  const swipeCardAnim = useRef(new Animated.Value(0)).current; // -1: slide left, 0: center, 1: slide right
 
   // Filters
   const [selectedTag, setSelectedTag] = useState<CategoryKey | null>(null);
@@ -149,12 +195,16 @@ export default function HomeScreen() {
   const [showSearch, setShowSearch] = useState(false);
   const [sortOrder, setSortOrder] = useState<"desc" | "asc">("desc");
 
+  // Insights Tab State
+  const [selectedInsightCategory, setSelectedInsightCategory] = useState<string | null>(null);
+  const [expandedInsightCategory, setExpandedInsightCategory] = useState<string | null>(null);
+
   // Modal State (Create / Edit)
   const [modalVisible, setModalVisible] = useState(false);
   const [editingTxnId, setEditingTxnId] = useState<string | null>(null);
   const [formType, setFormType] = useState<TxnType>("expense");
   const [formAmount, setFormAmount] = useState("");
-  const [formCategory, setFormCategory] = useState<CategoryKey>("coffee");
+  const [formCategory, setFormCategory] = useState<CategoryKey>("food_beverage");
   const [formNote, setFormNote] = useState("");
   const [formDate, setFormDate] = useState(getTodayISO());
   const [amountError, setAmountError] = useState<string | null>(null);
@@ -170,7 +220,6 @@ export default function HomeScreen() {
   const [deleteConfirmTxn, setDeleteConfirmTxn] = useState<Txn | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
   const [showCloudModal, setShowCloudModal] = useState(false);
-  const [showSettingsModal, setShowSettingsModal] = useState(false);
   const [cloudModalMode, setCloudModalMode] = useState<
     "signin" | "signup" | "forgot" | "new_password"
   >("signin");
@@ -178,19 +227,83 @@ export default function HomeScreen() {
 
   // In-App OTA Auto-Update State (Zero Data Loss)
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const currentVersion = Constants.expoConfig?.version ?? "1.0.0";
+
+  // Me Tab Sub-Page Navigation State
+  const [meSubPage, setMeSubPage] = useState<"main" | "updates" | "about" | "currency">("main");
+  const [currencySearch, setCurrencySearch] = useState("");
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
+  const [updateNotice, setUpdateNotice] = useState<{
+    type: "success" | "info" | "error";
+    message: string;
+  } | null>(null);
 
   // Currency Preference (Defaults to PHP, persists to local storage)
   const [currency, setCurrency] = useState<CurrencyOption>(DEFAULT_CURRENCY);
+  const [liveConversionEnabled, setLiveConversionEnabled] = useState<boolean>(true);
+  const [exchangeRates, setExchangeRates] = useState<Record<string, number>>({});
+
+  const filteredCurrencies = useMemo(() => {
+    const q = currencySearch.trim().toLowerCase();
+    if (!q) return CURRENCIES;
+    return CURRENCIES.filter(
+      (c) =>
+        c.code.toLowerCase().includes(q) ||
+        c.label.toLowerCase().includes(q) ||
+        c.symbol.toLowerCase().includes(q)
+    );
+  }, [currencySearch]);
+
+  const handleManualCheckUpdate = async () => {
+    safeHaptic.selection();
+    setCheckingUpdate(true);
+    setUpdateNotice(null);
+
+    try {
+      const res = await checkForAppUpdate();
+      setCheckingUpdate(false);
+
+      if (res && res.isAvailable) {
+        setShowUpdateModal(true);
+      } else {
+        safeHaptic.success();
+        setUpdateNotice({
+          type: "success",
+          message: `✿ You're on the latest version (v${currentVersion})! Your guest data is 100% safe.`,
+        });
+      }
+    } catch (err: any) {
+      setCheckingUpdate(false);
+      setUpdateNotice({
+        type: "info",
+        message: `✿ You're running the latest build (v${currentVersion}).`,
+      });
+    }
+  };
 
   useEffect(() => {
     loadSavedCurrency().then((saved) => {
       if (saved) setCurrency(saved);
+    });
+    loadConversionEnabled().then((enabled) => {
+      setLiveConversionEnabled(enabled);
+    });
+    getCachedRates().then((rates) => {
+      setExchangeRates(rates);
+    });
+    refreshExchangeRates().then((rates) => {
+      if (rates) setExchangeRates(rates);
     });
   }, []);
 
   const handleSelectCurrency = (newCurrency: CurrencyOption) => {
     setCurrency(newCurrency);
     saveSavedCurrency(newCurrency);
+  };
+
+  const handleToggleLiveConversion = (enabled: boolean) => {
+    setLiveConversionEnabled(enabled);
+    saveConversionEnabled(enabled);
   };
 
   // Check for updates silently in the background on startup
@@ -430,6 +543,16 @@ export default function HomeScreen() {
     return null;
   }, [timeframeMode, periodOffset]);
 
+  // Split period label (e.g. "Today (Sun, Sep 20)" -> main: "Today", sub: "(Sun, Sep 20)")
+  const periodLabelParts = useMemo(() => {
+    if (!currentRange) return { main: "", sub: "" };
+    const match = currentRange.label.match(/^(.*?)\s*(\(.*?\))$/);
+    if (match) {
+      return { main: match[1], sub: match[2] };
+    }
+    return { main: currentRange.label, sub: "" };
+  }, [currentRange]);
+
   // Dynamic header badge label reflecting current view
   const headerBadgeLabel = useMemo(() => {
     if (timeframeMode === "history") {
@@ -458,9 +581,37 @@ export default function HomeScreen() {
     return `${mLabel} · diary`;
   }, [timeframeMode, periodOffset]);
 
+  // Transactions with live currency conversion applied (if enabled)
+  const displayTxns = useMemo<Txn[]>(() => {
+    if (!liveConversionEnabled) {
+      return txns.map((t) => ({
+        ...t,
+        rawAmount: t.amount,
+        rawCurrency: t.originalCurrency || DEFAULT_CURRENCY.code,
+      }));
+    }
+    return txns.map((t) => {
+      const origCode = t.originalCurrency || DEFAULT_CURRENCY.code;
+      if (origCode === currency.code) {
+        return {
+          ...t,
+          rawAmount: t.amount,
+          rawCurrency: origCode,
+        };
+      }
+      const converted = convertAmount(t.amount, origCode, currency.code, exchangeRates);
+      return {
+        ...t,
+        amount: converted,
+        rawAmount: t.amount,
+        rawCurrency: origCode,
+      };
+    });
+  }, [txns, liveConversionEnabled, currency.code, exchangeRates]);
+
   // Filtered transactions for active timeframe & filters
   const scopedTxns = useMemo(() => {
-    let list = txns;
+    let list = displayTxns;
     if (currentRange) {
       list = list.filter((t) => isDateInRange(t.date, currentRange));
     }
@@ -476,11 +627,12 @@ export default function HomeScreen() {
         (t) =>
           t.note.toLowerCase().includes(q) ||
           t.category.toLowerCase().includes(q) ||
-          t.amount.toString().includes(q)
+          t.amount.toString().includes(q) ||
+          (t.rawAmount !== undefined && t.rawAmount.toString().includes(q))
       );
     }
     return list;
-  }, [txns, currentRange, selectedTag, selectedTypeFilter, searchQuery]);
+  }, [displayTxns, currentRange, selectedTag, selectedTypeFilter, searchQuery]);
 
   // Scoped totals for active timeframe
   const scopedTotals = useMemo(() => {
@@ -525,31 +677,104 @@ export default function HomeScreen() {
 
   // Month archives for All History mode
   const monthArchives = useMemo(() => {
-    return buildMonthArchives(txns);
-  }, [txns]);
+    return buildMonthArchives(displayTxns);
+  }, [displayTxns]);
 
   // Clean dynamic badges for opening scene
   const openingBadges = useMemo(() => {
-    if (txns.length >= 4) {
-      return txns.slice(0, 4).map((t) => {
-        const cat = CATEGORIES.find((c) => c.key === t.category) ?? CATEGORIES[0];
+    if (displayTxns.length >= 4) {
+      return displayTxns.slice(0, 4).map((t) => {
+        const cat = ALL_CATEGORIES.find((c) => c.key === t.category) ?? CATEGORIES[0];
         return `${cat.emoji} ${cat.label.toLowerCase()} · ${currency.symbol}${fmt(t.amount)}`;
       });
     }
-    return ["☕ coffee", "🛒 groceries", "🎬 fun", "💼 salary"];
-  }, [txns, currency.symbol]);
+    return ["🍽️ food & drinks", "🛒 groceries", "🎬 fun", "💼 salary"];
+  }, [displayTxns, currency.symbol]);
 
   const balanceWhole = Math.floor(Math.abs(scopedTotals.balance));
   const balanceCents = String(
     Math.round((Math.abs(scopedTotals.balance) - balanceWhole) * 100)
   ).padStart(2, "0");
 
-  // Timeframe Mode Switching
-  const handleSelectMode = (mode: TimeframeMode) => {
+  const MODES_LIST: TimeframeMode[] = ["daily", "week", "month", "history"];
+  const timeframeModeRef = useRef<TimeframeMode>("month");
+  timeframeModeRef.current = timeframeMode;
+
+  // Timeframe Mode Switching with smooth horizontal slide
+  const handleSelectMode = (mode: TimeframeMode, direction: -1 | 1 = 1) => {
     safeHaptic.selection();
-    setTimeframeMode(mode);
-    setPeriodOffset(0);
+    // Slide card out in the direction of swipe, then swap and slide back in
+    Animated.timing(swipeCardAnim, {
+      toValue: direction === 1 ? -36 : 36,
+      duration: 90,
+      useNativeDriver: true,
+    }).start(() => {
+      setTimeframeMode(mode);
+      timeframeModeRef.current = mode;
+      setPeriodOffset(0);
+      swipeCardAnim.setValue(direction === 1 ? 36 : -36);
+      Animated.spring(swipeCardAnim, {
+        toValue: 0,
+        friction: 8,
+        tension: 60,
+        useNativeDriver: true,
+      }).start();
+    });
   };
+
+  const handleStepHorizon = (step: -1 | 1) => {
+    const current = timeframeModeRef.current;
+    const idx = MODES_LIST.indexOf(current);
+    const targetIdx = idx + step;
+    if (targetIdx >= 0 && targetIdx < MODES_LIST.length) {
+      handleSelectMode(MODES_LIST[targetIdx], step);
+    }
+  };
+
+  // Horizontal Swipeable Time Horizon (Daily ⇄ Week ⇄ Month ⇄ History)
+  const swipePanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => false,
+      onMoveShouldSetPanResponder: (_, gestureState) => {
+        return (
+          Math.abs(gestureState.dx) > 18 &&
+          Math.abs(gestureState.dx) > Math.abs(gestureState.dy) * 1.5
+        );
+      },
+      onPanResponderMove: (_, gestureState) => {
+        // Provide live dragging visual feedback with resistance
+        const damped = Math.sign(gestureState.dx) * Math.min(Math.abs(gestureState.dx) * 0.35, 50);
+        swipeCardAnim.setValue(damped);
+      },
+      onPanResponderRelease: (_, gestureState) => {
+        const current = timeframeModeRef.current;
+        const idx = MODES_LIST.indexOf(current);
+
+        // Slide Right-to-Left (dx < -30): Go to NEXT horizon (Daily -> Week -> Month -> History)
+        if (gestureState.dx < -30) {
+          if (idx < MODES_LIST.length - 1) {
+            handleSelectMode(MODES_LIST[idx + 1], 1);
+            return;
+          }
+        }
+        // Slide Left-to-Right (dx > 30): Go to PREVIOUS / BACK horizon (History -> Month -> Week -> Daily)
+        else if (gestureState.dx > 30) {
+          if (idx > 0) {
+            handleSelectMode(MODES_LIST[idx - 1], -1);
+            return;
+          }
+        }
+
+        // Snap back if distance was too small or already at the boundary
+        Animated.spring(swipeCardAnim, {
+          toValue: 0,
+          friction: 7,
+          tension: 60,
+          useNativeDriver: true,
+        }).start();
+      },
+    })
+  ).current;
 
   // Period Shift
   const handleShiftPeriod = (direction: -1 | 1) => {
@@ -565,11 +790,19 @@ export default function HomeScreen() {
   // Open Create Modal
   const handleOpenCreate = () => {
     safeHaptic.light();
+    const initType = selectedTypeFilter ?? "expense";
     setEditingTxnId(null);
-    setFormType(selectedTypeFilter ?? "expense");
+    setFormType(initType);
     setFormAmount("");
     setAmountError(null);
-    setFormCategory(selectedTag ?? "coffee");
+    if (selectedTag) {
+      const match = (initType === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).find(
+        (c) => c.key === selectedTag
+      );
+      setFormCategory(match ? selectedTag : initType === "income" ? "salary" : "food_beverage");
+    } else {
+      setFormCategory(initType === "income" ? "salary" : "food_beverage");
+    }
     setFormNote("");
     setFormDate(getTodayISO());
     setModalVisible(true);
@@ -597,6 +830,7 @@ export default function HomeScreen() {
     const offset = (year - currentYear) * 12 + (month - currentMonth);
 
     setTimeframeMode("month");
+    timeframeModeRef.current = "month";
     setPeriodOffset(offset);
   };
 
@@ -614,7 +848,7 @@ export default function HomeScreen() {
     }
 
     const selectedCat =
-      CATEGORIES.find((c) => c.key === formCategory) ?? CATEGORIES[0];
+      ALL_CATEGORIES.find((c) => c.key === formCategory) ?? CATEGORIES[0];
     const finalNote = formNote.trim() || selectedCat.label;
 
     if (editingTxnId) {
@@ -628,6 +862,7 @@ export default function HomeScreen() {
                 category: formCategory,
                 note: finalNote,
                 date: formDate,
+                originalCurrency: currency.code,
               }
             : t
         )
@@ -641,6 +876,7 @@ export default function HomeScreen() {
         category: formCategory,
         note: finalNote,
         date: formDate,
+        originalCurrency: currency.code,
       };
       setTxns((prev) => [newTxn, ...prev]);
       safeHaptic.success();
@@ -748,14 +984,13 @@ export default function HomeScreen() {
       const m = item.archive;
       const isPositive = m.balance >= 0;
       return (
-        <Pressable
+        <NeoCard
           key={m.key}
           onPress={() => handleDrilldownMonth(m.year, m.month)}
-          style={({ pressed }) => [
-            styles.monthArchiveCard,
-            STYLES.card,
-            pressed && { opacity: 0.85, transform: [{ scale: 0.98 }] },
-          ]}
+          shadowOffsetX={2}
+          shadowOffsetY={2.5}
+          borderRadius={20}
+          style={styles.monthArchiveCard}
         >
           <View style={styles.archiveTopRow}>
             <View style={styles.archiveTitleGroup}>
@@ -797,27 +1032,23 @@ export default function HomeScreen() {
               </Text>
             </View>
           </View>
-        </Pressable>
+        </NeoCard>
       );
     }
 
     const t = item.txn;
-    const cat = CATEGORIES.find((c) => c.key === t.category) ?? CATEGORIES[0];
+    const cat = ALL_CATEGORIES.find((c) => c.key === t.category) ?? CATEGORIES[0];
     const col = getCategoryColor(cat.bg);
     const isIncome = t.type === "income";
 
     return (
-      <Pressable
+      <NeoCard
         key={t.id}
         onPress={() => handleOpenEdit(t)}
-        style={({ pressed }) => [
-          styles.txnCard,
-          STYLES.card,
-          pressed && {
-            opacity: 0.85,
-            transform: [{ scale: 0.98 }],
-          },
-        ]}
+        shadowOffsetX={2}
+        shadowOffsetY={2}
+        borderRadius={18}
+        style={styles.txnCard}
       >
         {/* Category Sticker Tag */}
         <Pressable
@@ -858,6 +1089,14 @@ export default function HomeScreen() {
           >
             {isIncome ? "+" : "−"}{currency.symbol}{fmt(t.amount)}
           </Text>
+          {liveConversionEnabled &&
+            t.rawCurrency &&
+            t.rawCurrency !== currency.code &&
+            t.rawAmount !== undefined && (
+              <Text style={styles.txnOrigAmount}>
+                orig. {getCurrencySymbol(t.rawCurrency)}{fmt(t.rawAmount)}
+              </Text>
+            )}
           <Pressable
             hitSlop={12}
             onPress={(e) => {
@@ -869,14 +1108,381 @@ export default function HomeScreen() {
             <Trash2 size={14} color={COLORS.inkSoft} />
           </Pressable>
         </View>
-      </Pressable>
+      </NeoCard>
     );
   };
 
+  const renderTimeframeNavigator = () => (
+    <View>
+      {/* Time Horizon Slider (Clean Neobrutalist Horizon Capsule) */}
+      <View style={styles.timeframeSegmentContainer}>
+        {/* Double-Headed Arrow Guide Line */}
+        <View style={styles.horizonDoubleArrowContainer}>
+          <ChevronLeft size={11} color="rgba(59, 51, 48, 0.4)" strokeWidth={2.2} />
+          <View style={{ flex: 1, height: 2, marginHorizontal: 6, justifyContent: "center" }}>
+            <Svg height="2" width="100%">
+              <Line
+                x1="0"
+                y1="1"
+                x2="100%"
+                y2="1"
+                stroke="rgba(59, 51, 48, 0.28)"
+                strokeWidth="1"
+                strokeDasharray="3, 3"
+              />
+            </Svg>
+          </View>
+          <ChevronRight size={11} color="rgba(59, 51, 48, 0.4)" strokeWidth={2.2} />
+        </View>
+
+        {/* Clean Pill Button with Swipe Support */}
+        <View style={{ position: "relative", width: "100%" }}>
+          {/* Neobrutalist underlay for Daily View capsule - unclipped inset layout */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 3,
+              left: 2,
+              right: 0,
+              bottom: 0,
+              borderRadius: 9999,
+              backgroundColor: COLORS.ink,
+            }}
+          />
+          <Animated.View
+            {...swipePanResponder.panHandlers}
+            style={[
+              styles.horizonCard,
+              {
+                marginRight: 2,
+                marginBottom: 3,
+                backgroundColor:
+                  timeframeMode === "daily"
+                    ? COLORS.butter
+                    : timeframeMode === "week"
+                    ? COLORS.mint
+                    : timeframeMode === "month"
+                    ? COLORS.peach
+                    : COLORS.lavender,
+                transform: [{ translateX: swipeCardAnim }],
+              },
+            ]}
+          >
+            {/* Left Arrow Button */}
+            <Pressable
+              onPress={() => handleStepHorizon(-1)}
+              disabled={timeframeMode === "daily"}
+              style={[
+                styles.horizonArrowBtn,
+                timeframeMode === "daily" && styles.horizonArrowDisabled,
+              ]}
+              hitSlop={8}
+              accessibilityLabel="Swipe or tap to go to previous timeframe"
+            >
+              <ChevronLeft
+                size={15}
+                color={COLORS.ink}
+                strokeWidth={2.4}
+              />
+            </Pressable>
+
+            {/* Center Title & Icon */}
+            <View style={styles.horizonCenter}>
+              <View style={styles.horizonTitleRow}>
+                {timeframeMode === "daily" && (
+                  <Sun size={14} color={COLORS.ink} strokeWidth={2.4} />
+                )}
+                {timeframeMode === "week" && (
+                  <Clock size={14} color={COLORS.ink} strokeWidth={2.4} />
+                )}
+                {timeframeMode === "month" && (
+                  <Calendar size={14} color={COLORS.ink} strokeWidth={2.4} />
+                )}
+                {timeframeMode === "history" && (
+                  <Archive size={14} color={COLORS.ink} strokeWidth={2.4} />
+                )}
+                <Text style={styles.horizonTitleText}>
+                  {timeframeMode === "daily"
+                    ? "Daily View"
+                    : timeframeMode === "week"
+                    ? "Week View"
+                    : timeframeMode === "month"
+                    ? "Month View"
+                    : "All History"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Right Arrow Button */}
+            <Pressable
+              onPress={() => handleStepHorizon(1)}
+              disabled={timeframeMode === "history"}
+              style={[
+                styles.horizonArrowBtn,
+                timeframeMode === "history" && styles.horizonArrowDisabled,
+              ]}
+              hitSlop={8}
+              accessibilityLabel="Swipe or tap to go to next timeframe"
+            >
+              <ChevronRight
+                size={15}
+                color={COLORS.ink}
+                strokeWidth={2.4}
+              />
+            </Pressable>
+          </Animated.View>
+        </View>
+
+        {/* Horizon Indicator Dots (Underneath the card) */}
+        <View style={styles.horizonDotsContainer}>
+          {MODES_LIST.map((m) => (
+            <View
+              key={m}
+              style={[
+                styles.horizonDot,
+                timeframeMode === m && styles.horizonDotActive,
+              ]}
+            />
+          ))}
+        </View>
+      </View>
+
+      {/* Period Navigator Bar */}
+      {currentRange && (
+        <View style={styles.periodNavigatorBar}>
+          <View style={{ position: "relative" }}>
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 2,
+                left: 1.5,
+                right: 0,
+                bottom: 0,
+                borderRadius: 16,
+                backgroundColor: COLORS.ink,
+              }}
+            />
+            <Pressable
+              onPress={() => handleShiftPeriod(-1)}
+              style={[styles.periodArrowBtn, { marginRight: 1.5, marginBottom: 2 }]}
+              hitSlop={8}
+              accessibilityLabel="Previous day or period"
+            >
+              <ChevronLeft size={16} color={COLORS.ink} strokeWidth={2.5} />
+            </Pressable>
+          </View>
+
+          <View style={styles.periodCenterInfo}>
+            <Text style={styles.periodLabelMain}>
+              {periodLabelParts.main}{" "}
+              {periodLabelParts.sub ? (
+                <Text style={styles.periodLabelSub}>{periodLabelParts.sub}</Text>
+              ) : null}
+            </Text>
+            {periodOffset !== 0 && (
+              <Pressable
+                onPress={handleJumpToCurrent}
+                style={styles.jumpCurrentBadge}
+              >
+                <RotateCcw size={10} color={COLORS.peach} />
+                <Text style={styles.jumpCurrentText}>Jump to current</Text>
+              </Pressable>
+            )}
+          </View>
+
+          <View style={{ position: "relative" }}>
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 2,
+                left: 1.5,
+                right: 0,
+                bottom: 0,
+                borderRadius: 16,
+                backgroundColor: COLORS.ink,
+              }}
+            />
+            <Pressable
+              onPress={() => handleShiftPeriod(1)}
+              style={[styles.periodArrowBtn, { marginRight: 1.5, marginBottom: 2 }]}
+              hitSlop={8}
+              accessibilityLabel="Next day or period"
+            >
+              <ChevronRight size={16} color={COLORS.ink} strokeWidth={2.5} />
+            </Pressable>
+          </View>
+        </View>
+      )}
+    </View>
+  );
+
   const renderListHeader = () => (
     <View>
-      {/* Dynamic Balance Hero Card */}
-      <View style={[STYLES.card, isCompact && { padding: 14 }]}>
+      {/* App Header */}
+      <View style={styles.header}>
+        <Pressable
+          onPress={() => {
+            safeHaptic.light();
+            setSelectedTag(null);
+            setSelectedTypeFilter(null);
+            setSearchQuery("");
+            setShowSearch(false);
+            (scrollRef.current as any)?.scrollToOffset
+              ? (scrollRef.current as any).scrollToOffset({ offset: 0, animated: true })
+              : scrollRef.current?.scrollTo?.({ y: 0, animated: true });
+          }}
+          style={styles.headerLeft}
+          hitSlop={8}
+        >
+          <View style={[styles.brandIconWrapper, isCompact && { width: 38, height: 38 }]}>
+            {/* Peeking Mini Penny Coin */}
+            <View style={[styles.brandPennyCoin, isCompact && { width: 14, height: 14, top: 0, right: 2 }]}>
+              <Text style={[styles.brandCoinSymbol, isCompact && { fontSize: 7, lineHeight: 8.5 }]}>
+                {currency.symbol.length > 2 ? currency.symbol[0] : currency.symbol}
+              </Text>
+            </View>
+
+            {/* Mini Pocket Squircle Body with solid shadow underlay */}
+            <View style={{ position: "relative" }}>
+              <View
+                pointerEvents="none"
+                style={{
+                  position: "absolute",
+                  top: 2,
+                  left: 1.5,
+                  right: 0,
+                  bottom: 0,
+                  borderRadius: isCompact ? 11 : 13,
+                  backgroundColor: COLORS.ink,
+                }}
+              />
+              <View
+                style={[
+                  styles.brandPocketBody,
+                  isCompact && { width: 32, height: 32, borderRadius: 11 },
+                  { marginRight: 1.5, marginBottom: 2 },
+                ]}
+              >
+                <View style={[styles.brandPocketTopStitch, isCompact && { top: 5, left: 4, right: 4 }]} />
+                <View style={[styles.brandRivet, { left: isCompact ? 3 : 4 }]} />
+                <View style={[styles.brandRivet, { right: isCompact ? 3 : 4 }]} />
+                <Text style={[styles.brandIconText, isCompact && { fontSize: 18 }]}>p</Text>
+              </View>
+            </View>
+          </View>
+          <View>
+            <Text style={[styles.brandTitle, isCompact && { fontSize: 18, lineHeight: 20 }]}>pocket.</Text>
+            <Text style={styles.brandSubtitle}>penny journal</Text>
+          </View>
+        </Pressable>
+
+        <View style={[styles.headerRight, isCompact && { gap: 6 }]}>
+
+
+          <View style={{ position: "relative" }}>
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 2,
+                left: 1,
+                right: 0,
+                bottom: 0,
+                borderRadius: isCompact ? 10 : 14,
+                backgroundColor: "rgba(59, 51, 48, 0.25)",
+              }}
+            />
+            <Pressable
+              onPress={() => {
+                safeHaptic.selection();
+                setShowCloudModal(true);
+              }}
+              style={[
+                styles.headerIconButton,
+                isCompact && { width: 30, height: 30, borderRadius: 10 },
+                { marginRight: 1, marginBottom: 2 },
+              ]}
+              hitSlop={8}
+              accessibilityLabel="Open Cloud Sync & Backup"
+            >
+              <Cloud size={isCompact ? 14 : 15} color={COLORS.ink} strokeWidth={2.2} />
+            </Pressable>
+          </View>
+
+          <View style={{ position: "relative" }}>
+            <View
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                top: 2,
+                left: 1,
+                right: 0,
+                bottom: 0,
+                borderRadius: isCompact ? 10 : 14,
+                backgroundColor: "rgba(59, 51, 48, 0.25)",
+              }}
+            />
+            <Pressable
+              onPress={() => {
+                safeHaptic.selection();
+                setShowSearch((prev) => !prev);
+              }}
+              style={[
+                styles.headerIconButton,
+                isCompact && { width: 30, height: 30, borderRadius: 10 },
+                showSearch && { backgroundColor: COLORS.ink, borderColor: COLORS.ink },
+                { marginRight: 1, marginBottom: 2 },
+              ]}
+            >
+              <Search
+                size={isCompact ? 14 : 15}
+                color={showSearch ? COLORS.cream : COLORS.ink}
+                strokeWidth={2.2}
+              />
+            </Pressable>
+          </View>
+        </View>
+      </View>
+
+      {/* Expandable Search Input */}
+      {showSearch && (
+        <View style={styles.searchBarContainer}>
+          <View style={styles.searchBarWrapper}>
+            <Search size={16} color={COLORS.inkSoft} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search by note, amount, category..."
+              placeholderTextColor={COLORS.inkSoft}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoFocus
+            />
+            {searchQuery.length > 0 ? (
+              <Pressable
+                onPress={() => setSearchQuery("")}
+                style={styles.searchClearBtn}
+              >
+                <X size={14} color={COLORS.ink} />
+              </Pressable>
+            ) : null}
+          </View>
+        </View>
+      )}
+
+      {/* Reusable Time Horizon & Period Navigator */}
+      {renderTimeframeNavigator()}
+
+      {/* Dynamic Balance Hero Card - Swipe horizontally to change time horizon */}
+      <NeoCard
+        {...swipePanResponder.panHandlers}
+        shadowOffsetX={3.5}
+        shadowOffsetY={4.5}
+        borderRadius={26}
+        style={[styles.heroCardContent, isCompact && { padding: 14 }]}
+      >
         <View style={styles.cardTopRow}>
           <Text style={[styles.cardEyebrow, isCompact && { fontSize: 10 }]}>{heroEyebrow}</Text>
           <View style={styles.sparkleBadge}>
@@ -886,9 +1492,6 @@ export default function HomeScreen() {
 
         {/* Amount Display */}
         <View style={styles.balanceRow}>
-          <Text style={[styles.currencySymbol, isCompact && { fontSize: 22 }]}>
-            {scopedTotals.balance < 0 ? `−${currency.symbol}` : currency.symbol}
-          </Text>
           <Text
             style={[
               styles.balanceBigText,
@@ -898,9 +1501,10 @@ export default function HomeScreen() {
             adjustsFontSizeToFit
             minimumFontScale={0.7}
           >
+            {scopedTotals.balance < 0 ? `−${currency.symbol}` : currency.symbol}
             {balanceWhole.toLocaleString("en-US")}
           </Text>
-          <Text style={[styles.balanceCentsText, isCompact && { fontSize: 20 }]}>.{balanceCents}</Text>
+          <Text style={[styles.balanceCentsText, isCompact && { fontSize: 22 }]}>.{balanceCents}</Text>
         </View>
 
         {/* Interactive Income / Spent Toggles */}
@@ -999,7 +1603,7 @@ export default function HomeScreen() {
             </View>
           </Pressable>
         </View>
-      </View>
+      </NeoCard>
 
       {/* Category Tag Navigation Bar */}
       <View style={[styles.categoriesSection, { marginHorizontal: -horizontalPad }]}>
@@ -1018,6 +1622,8 @@ export default function HomeScreen() {
               STYLES.chip,
               {
                 backgroundColor: selectedTag === null ? COLORS.ink : COLORS.cream,
+                borderColor: selectedTag === null ? COLORS.ink : "rgba(59, 51, 48, 0.2)",
+                borderWidth: selectedTag === null ? 1.5 : 1,
                 marginRight: 8,
               },
             ]}
@@ -1033,7 +1639,12 @@ export default function HomeScreen() {
           </Pressable>
 
           {/* Individual Tags */}
-          {CATEGORIES.map((c) => {
+          {(selectedTypeFilter === "income"
+            ? INCOME_CATEGORIES
+            : selectedTypeFilter === "expense"
+            ? EXPENSE_CATEGORIES
+            : CATEGORIES
+          ).map((c) => {
             const active = selectedTag === c.key;
             const col = getCategoryColor(c.bg);
             const count = categoryStats[c.key]?.count || 0;
@@ -1049,7 +1660,8 @@ export default function HomeScreen() {
                   STYLES.chip,
                   {
                     backgroundColor: active ? col.bg : COLORS.cream,
-                    borderColor: active ? COLORS.ink : COLORS.cardBorder,
+                    borderColor: active ? COLORS.ink : "rgba(59, 51, 48, 0.2)",
+                    borderWidth: active ? 1.5 : 1,
                     marginRight: 8,
                   },
                 ]}
@@ -1156,28 +1768,976 @@ export default function HomeScreen() {
   const renderListEmpty = () => {
     if (timeframeMode === "history") return null;
     return (
-      <View style={[STYLES.card, styles.emptyCard]}>
-        <Text style={styles.emptyEmoji}>📒</Text>
+      <NeoCard
+        shadowOffsetX={3}
+        shadowOffsetY={4}
+        borderRadius={24}
+        style={styles.emptyCard}
+      >
+        <View style={styles.emptyEmojiBox}>
+          <Text style={styles.emptyEmoji}>📒</Text>
+        </View>
         <Text style={styles.emptyTitle}>no entries in this period</Text>
         <Text style={styles.emptySubtitle}>
           {selectedTag || selectedTypeFilter || searchQuery
-            ? "Try clearing filters or changing the period ✿"
-            : "Tap \"+ Add Entry\" below to log something ✿"}
+            ? "Try clearing filters or changing the period 🌸"
+            : "Tap “+ Add Entry” below to log something 🌸"}
         </Text>
-      </View>
+      </NeoCard>
     );
   };
 
   const renderListFooter = () => (
-    <View style={{ paddingBottom: 100 }}>
-      <View style={styles.quoteCard}>
-        <Text style={styles.quoteText}>
-          "a steady little habit beats a big reset."
-        </Text>
-        <Text style={styles.quoteAuthor}>— the pocket ledger</Text>
+    <NeoCard
+      shadowOffsetX={3}
+      shadowOffsetY={3}
+      borderRadius={24}
+      backgroundColor="#F1EEFB"
+      style={styles.quoteCard}
+    >
+      <View style={styles.quoteContentRow}>
+        <Text style={styles.quoteSparkleEmoji}>✨</Text>
+        <View style={styles.quoteTextCol}>
+          <Text style={styles.quoteText}>
+            “a steady life, a penny saved is a future paved with calm.”
+          </Text>
+          <Text style={styles.quoteAuthor}>— the pocket journal prompt</Text>
+        </View>
       </View>
-    </View>
+    </NeoCard>
   );
+
+  // Category spending distribution for Insights Tab
+  const categoryExpenseBreakdown = useMemo(() => {
+    const expenses = (scopedTxns || []).filter((t) => t.type === "expense");
+    const totalExp = scopedTotals?.spent || 1;
+    const catMap: Record<string, { amount: number; count: number }> = {};
+    for (const t of expenses) {
+      if (!catMap[t.category]) {
+        catMap[t.category] = { amount: 0, count: 0 };
+      }
+      catMap[t.category].amount += t.amount;
+      catMap[t.category].count += 1;
+    }
+    return Object.entries(catMap)
+      .map(([key, data]) => {
+        const catInfo = ALL_CATEGORIES.find((c) => c.key === key) || {
+          key,
+          label: key,
+          emoji: "💸",
+          bg: "butter" as const,
+        };
+        const percentage = Math.round((data.amount / totalExp) * 100);
+        return {
+          ...catInfo,
+          amount: data.amount,
+          count: data.count,
+          percentage,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  }, [scopedTxns, scopedTotals?.spent]);
+
+  // Donut chart data for Insights Tab
+  const donutChartData = useMemo(() => {
+    return categoryExpenseBreakdown.map((item, idx) => ({
+      key: item.key,
+      label: item.label,
+      emoji: item.emoji,
+      amount: item.amount,
+      count: item.count,
+      percentage: item.percentage,
+      color: getCategorySliceColor(idx, item.bg),
+      bg: item.bg,
+    }));
+  }, [categoryExpenseBreakdown]);
+
+  // Key metrics for Insights Tab
+  const insightsMetrics = useMemo(() => {
+    const expenses = (scopedTxns || []).filter((t) => t.type === "expense");
+    const count = expenses.length;
+    const total = scopedTotals?.spent || 0;
+    const topCategory = categoryExpenseBreakdown[0] || null;
+    const avgPerEntry = count > 0 ? total / count : 0;
+
+    let periodLabel = "ENTRIES";
+    let burnRate = count;
+    if (timeframeMode === "month") {
+      periodLabel = "DAILY BURN";
+      burnRate = total > 0 ? Math.round(total / 30) : 0;
+    } else if (timeframeMode === "week") {
+      periodLabel = "DAILY BURN";
+      burnRate = total > 0 ? Math.round(total / 7) : 0;
+    } else if (timeframeMode === "history") {
+      periodLabel = "ALL ENTRIES";
+      burnRate = count;
+    }
+
+    return {
+      count,
+      total,
+      topCategory,
+      avgPerEntry,
+      periodLabel,
+      burnRate,
+    };
+  }, [scopedTxns, scopedTotals?.spent, categoryExpenseBreakdown, timeframeMode]);
+
+  // Insights Tab Component
+  const renderInsightsTab = () => {
+    const hasExpenses = categoryExpenseBreakdown.length > 0;
+
+    return (
+      <ScrollView
+        style={{ flex: 1, width: "100%" }}
+        contentContainerStyle={{
+          ...styles.scrollContent,
+          paddingHorizontal: horizontalPad,
+          paddingTop: insets.top + 8,
+          paddingBottom: insets.bottom + 95,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.tabScreenHeader}>
+          <Text style={styles.tabScreenTitle}>Spending Insights 📊</Text>
+          <Text style={styles.tabScreenSubtitle}>Where your pennies traveled in this period</Text>
+        </View>
+
+        {/* Time Horizon & Period Navigator (Shared with Journal) */}
+        <View style={{ marginBottom: 16 }}>
+          {renderTimeframeNavigator()}
+        </View>
+
+        {!hasExpenses ? (
+          <NeoCard
+            shadowOffsetX={3}
+            shadowOffsetY={4}
+            borderRadius={24}
+            style={styles.emptyCard}
+          >
+            <View style={styles.emptyEmojiBox}>
+              <Text style={styles.emptyEmoji}>🍰</Text>
+            </View>
+            <Text style={styles.emptyTitle}>no expenses in this period</Text>
+            <Text style={styles.emptySubtitle}>Log an expense to see your spending breakdown 🌸</Text>
+          </NeoCard>
+        ) : (
+          <>
+            {/* Key Financial Highlights Row */}
+            <View style={styles.insightHighlightsRow}>
+              {/* Top Category */}
+              <View style={[styles.insightHighlightCard, { backgroundColor: COLORS.butter }]}>
+                <Text style={styles.insightHighlightEyebrow}>TOP SPEND</Text>
+                <Text style={styles.insightHighlightTitle} numberOfLines={1}>
+                  {insightsMetrics.topCategory ? `${insightsMetrics.topCategory.emoji} ${insightsMetrics.topCategory.label}` : "None"}
+                </Text>
+                <Text style={styles.insightHighlightSub}>
+                  {insightsMetrics.topCategory ? `${insightsMetrics.topCategory.percentage}% of spent` : "—"}
+                </Text>
+              </View>
+
+              {/* Avg per entry */}
+              <View style={[styles.insightHighlightCard, { backgroundColor: COLORS.mint }]}>
+                <Text style={styles.insightHighlightEyebrow}>AVG / ENTRY</Text>
+                <Text style={styles.insightHighlightTitle} numberOfLines={1}>
+                  {currency.symbol}{fmt(insightsMetrics.avgPerEntry)}
+                </Text>
+                <Text style={styles.insightHighlightSub}>
+                  {insightsMetrics.count} {insightsMetrics.count === 1 ? "entry" : "entries"}
+                </Text>
+              </View>
+
+              {/* Daily Burn / Rate */}
+              <View style={[styles.insightHighlightCard, { backgroundColor: COLORS.lavender }]}>
+                <Text style={styles.insightHighlightEyebrow}>{insightsMetrics.periodLabel}</Text>
+                <Text style={styles.insightHighlightTitle} numberOfLines={1}>
+                  {insightsMetrics.periodLabel.includes("BURN") || insightsMetrics.periodLabel.includes("AVG")
+                    ? `${currency.symbol}${fmt(insightsMetrics.burnRate)}`
+                    : `${insightsMetrics.burnRate}`}
+                </Text>
+                <Text style={styles.insightHighlightSub}>
+                  {timeframeMode === "daily" ? "logged today" : "per day avg"}
+                </Text>
+              </View>
+            </View>
+
+            {/* Donut Chart Visualizer Card */}
+            <NeoCard
+              shadowOffsetX={3}
+              shadowOffsetY={4}
+              borderRadius={24}
+              backgroundColor={COLORS.cream}
+              style={[styles.donutSectionCard, { marginBottom: 18 }]}
+            >
+              <View style={styles.cardTopRow}>
+                <Text style={styles.cardEyebrow}>SPENDING DISTRIBUTION</Text>
+                {selectedInsightCategory ? (
+                  <Pressable
+                    onPress={() => {
+                      safeHaptic.selection();
+                      setSelectedInsightCategory(null);
+                    }}
+                    style={styles.resetFilterPill}
+                  >
+                    <Text style={styles.resetFilterPillText}>Reset ✕</Text>
+                  </Pressable>
+                ) : (
+                  <View style={styles.sparkleBadge}>
+                    <Text style={styles.sparkleText}>tap to focus ✿</Text>
+                  </View>
+                )}
+              </View>
+
+              <View style={styles.donutChartContainer}>
+                <InsightsDonutChart
+                  data={donutChartData}
+                  totalSpent={scopedTotals.spent}
+                  currencySymbol={currency.symbol}
+                  selectedCategoryKey={selectedInsightCategory}
+                  onSelectCategory={(key) => {
+                    safeHaptic.selection();
+                    setSelectedInsightCategory((prev) => (prev === key ? null : key));
+                    setExpandedInsightCategory((prev) => (prev === key ? null : key));
+                  }}
+                  size={isCompact ? 220 : 250}
+                  donutThickness={isCompact ? 38 : 44}
+                />
+              </View>
+
+              {/* Multi-Segment Proportion Bar (Battery Tracker) */}
+              <View style={styles.multiBarContainer}>
+                <View style={styles.multiBarTrack}>
+                  {donutChartData.map((item) => (
+                    <Pressable
+                      key={item.key}
+                      onPress={() => {
+                        safeHaptic.selection();
+                        setSelectedInsightCategory((prev) => (prev === item.key ? null : item.key));
+                        setExpandedInsightCategory((prev) => (prev === item.key ? null : item.key));
+                      }}
+                      style={{
+                        height: "100%",
+                        width: `${Math.max(item.percentage, 2)}%`,
+                        backgroundColor: item.color,
+                        opacity: selectedInsightCategory && selectedInsightCategory !== item.key ? 0.35 : 1,
+                      }}
+                    />
+                  ))}
+                </View>
+                <View style={styles.multiBarHintRow}>
+                  <Text style={styles.multiBarHintText}>
+                    {selectedInsightCategory
+                      ? `Viewing ${donutChartData.find((d) => d.key === selectedInsightCategory)?.label || "selected"}`
+                      : `${donutChartData.length} ${donutChartData.length === 1 ? "category" : "categories"} active`}
+                  </Text>
+                  <Text style={styles.multiBarHintText}>
+                    Total: {currency.symbol}{fmt(scopedTotals.spent)}
+                  </Text>
+                </View>
+              </View>
+            </NeoCard>
+
+            {/* Category Breakdown & Transaction Drilldown Header */}
+            <View style={[styles.listHeaderRow, { marginBottom: 12 }]}>
+              <Text style={styles.listHeaderTitle}>CATEGORY BREAKDOWN & ENTRIES</Text>
+              <Text style={styles.listHeaderSubtitle}>Tap to inspect</Text>
+            </View>
+
+            {categoryExpenseBreakdown.map((item, idx) => {
+              const sliceColor = getCategorySliceColor(idx, item.bg);
+              const isSelected = selectedInsightCategory === item.key;
+              const isExpanded = expandedInsightCategory === item.key;
+              const catTxns = isExpanded ? (scopedTxns || []).filter((t) => t.type === "expense" && t.category === item.key) : [];
+
+              return (
+                <View key={item.key} style={{ marginBottom: 10 }}>
+                  <NeoCard
+                    shadowOffsetX={isSelected ? 3 : 2}
+                    shadowOffsetY={isSelected ? 3.5 : 2.5}
+                    borderRadius={18}
+                    backgroundColor={isSelected ? "#FFFDF5" : COLORS.cream}
+                    borderColor={isSelected ? sliceColor : COLORS.cardBorder}
+                    borderWidth={isSelected ? 2 : 1.5}
+                    style={styles.insightCard}
+                  >
+                    <Pressable
+                      onPress={() => {
+                        safeHaptic.selection();
+                        setSelectedInsightCategory((prev) => (prev === item.key ? null : item.key));
+                        setExpandedInsightCategory((prev) => (prev === item.key ? null : item.key));
+                      }}
+                      style={{ width: "100%" }}
+                    >
+                      <View style={styles.insightTopRow}>
+                        <View style={styles.insightLeftRow}>
+                          <View style={[styles.txnIconBox, { backgroundColor: sliceColor }]}>
+                            <Text style={styles.txnEmoji}>{item.emoji}</Text>
+                          </View>
+                          <View style={{ marginLeft: 10 }}>
+                            <Text style={styles.insightCatName}>{item.label}</Text>
+                            <Text style={styles.insightCatMeta}>
+                              {item.count} {item.count === 1 ? "entry" : "entries"}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={{ flexDirection: "row", alignItems: "center" }}>
+                          <View style={{ alignItems: "flex-end", marginRight: 8 }}>
+                            <Text style={styles.insightAmount}>−{currency.symbol}{fmt(item.amount)}</Text>
+                            <Text style={styles.insightPercentage}>{item.percentage}% of spent</Text>
+                          </View>
+                          <ChevronDown
+                            size={16}
+                            color={COLORS.ink}
+                            style={{
+                              transform: [{ rotate: isExpanded ? "180deg" : "0deg" }],
+                            }}
+                          />
+                        </View>
+                      </View>
+
+                      <View style={styles.insightBarTrack}>
+                        <View
+                          style={[
+                            styles.insightBarFill,
+                            {
+                              width: `${Math.min(item.percentage, 100)}%`,
+                              backgroundColor: sliceColor,
+                            },
+                          ]}
+                        />
+                      </View>
+                    </Pressable>
+
+                    {/* Drilldown Accordion for this Category */}
+                    {isExpanded && (
+                      <View style={styles.insightDrilldownContainer}>
+                        <View style={styles.drilldownHeader}>
+                          <Text style={styles.drilldownHeaderText}>Entries in this period ({catTxns.length}):</Text>
+                        </View>
+                        {catTxns.length === 0 ? (
+                          <Text style={[styles.emptySubtitle, { textAlign: "left", marginVertical: 6 }]}>
+                            No entries found.
+                          </Text>
+                        ) : (
+                          catTxns.map((t) => (
+                            <Pressable
+                              key={t.id}
+                              onPress={() => handleOpenEdit(t)}
+                              style={styles.insightDrilldownRow}
+                            >
+                              <View style={{ flex: 1, marginRight: 8 }}>
+                                <Text style={styles.insightDrilldownNote} numberOfLines={1}>
+                                  {t.note ? t.note : item.label}
+                                </Text>
+                                <Text style={styles.insightDrilldownDate}>
+                                  {formatShortDate(t.date)}
+                                </Text>
+                              </View>
+                              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                                <Text style={styles.insightDrilldownAmount}>
+                                  −{currency.symbol}{fmt(t.amount)}
+                                </Text>
+                                <Edit2 size={13} color="rgba(59, 51, 48, 0.45)" style={{ marginLeft: 6 }} />
+                              </View>
+                            </Pressable>
+                          ))
+                        )}
+                      </View>
+                    )}
+                  </NeoCard>
+                </View>
+              );
+            })}
+          </>
+        )}
+      </ScrollView>
+    );
+  };
+
+  // Piggy Tab Component
+  const renderPiggyTab = () => {
+    const netSavings = scopedTotals.income - scopedTotals.spent;
+    const isPositive = netSavings >= 0;
+    const savingsRate = scopedTotals.income > 0 ? Math.round((Math.max(0, netSavings) / scopedTotals.income) * 100) : 0;
+
+    return (
+      <ScrollView
+        style={{ flex: 1, width: "100%" }}
+        contentContainerStyle={{
+          ...styles.scrollContent,
+          paddingHorizontal: horizontalPad,
+          paddingTop: insets.top + 8,
+          paddingBottom: insets.bottom + 95,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.tabScreenHeader}>
+          <Text style={styles.tabScreenTitle}>Piggy Bank 🐷</Text>
+          <Text style={styles.tabScreenSubtitle}>Nurturing calm and consistent savings</Text>
+        </View>
+
+        <NeoCard
+          shadowOffsetX={3}
+          shadowOffsetY={4}
+          borderRadius={24}
+          style={[styles.heroCardContent, { marginBottom: 16 }]}
+        >
+          <View style={styles.cardTopRow}>
+            <Text style={styles.cardEyebrow}>NET SAVINGS THIS PERIOD</Text>
+            <View style={[styles.sparkleBadge, { backgroundColor: isPositive ? "#D4F0E3" : "#FFE0D6" }]}>
+              <Text style={styles.sparkleText}>{isPositive ? "healthy ✿" : "deficit ✿"}</Text>
+            </View>
+          </View>
+          <Text style={[styles.balanceBigText, { color: isPositive ? "#2D8C65" : "#D35433", marginTop: 8 }]}>
+            {isPositive ? "+" : "−"}{currency.symbol}{fmt(Math.abs(netSavings))}
+          </Text>
+          <Text style={[styles.emptySubtitle, { textAlign: "left", marginTop: 4 }]}>
+            Savings rate: {savingsRate}% of total income
+          </Text>
+        </NeoCard>
+
+        <NeoCard
+          shadowOffsetX={3}
+          shadowOffsetY={4}
+          borderRadius={24}
+          style={styles.emptyCard}
+        >
+          <View style={[styles.emptyEmojiBox, { backgroundColor: "#FFE0D6", borderColor: "#FFA08A" }]}>
+            <Text style={styles.emptyEmoji}>🪙</Text>
+          </View>
+          <Text style={styles.emptyTitle}>Every Penny Matters</Text>
+          <Text style={[styles.emptySubtitle, { textAlign: "center", paddingHorizontal: 16 }]}>
+            “Small daily economies compound into quiet financial freedom. Keep tucking pennies into your journal.”
+          </Text>
+        </NeoCard>
+      </ScrollView>
+    );
+  };
+
+  // Me Tab Component
+  const renderMeTab = () => {
+    return (
+      <ScrollView
+        style={{ flex: 1, width: "100%" }}
+        contentContainerStyle={{
+          ...styles.scrollContent,
+          paddingHorizontal: horizontalPad,
+          paddingTop: insets.top + 8,
+          paddingBottom: insets.bottom + 95,
+        }}
+        showsVerticalScrollIndicator={false}
+      >
+        {meSubPage === "updates" && (
+          <View>
+            <View style={styles.subPageHeader}>
+              <Pressable
+                onPress={() => {
+                  safeHaptic.light();
+                  setMeSubPage("main");
+                }}
+                style={styles.subPageBackButton}
+                hitSlop={8}
+                accessibilityLabel="Back to Notebook"
+              >
+                <ChevronLeft size={20} color={COLORS.ink} strokeWidth={2.4} />
+              </Pressable>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.tabScreenTitle}>Updates & Safety 🛡️</Text>
+                <Text style={styles.tabScreenSubtitle}>Version check & data protection</Text>
+              </View>
+            </View>
+
+            {/* Version NeoCard */}
+            <NeoCard
+              shadowOffsetX={2}
+              shadowOffsetY={2.5}
+              borderRadius={20}
+              backgroundColor={COLORS.cream}
+              style={{ padding: 14, marginBottom: 14 }}
+            >
+              <View style={styles.settingItemRow}>
+                <View style={[styles.settingIconBox, { backgroundColor: "#E6FAF0" }]}>
+                  <Smartphone size={16} color="#2D8C65" strokeWidth={2.2} />
+                </View>
+                <View style={styles.settingTextCol}>
+                  <Text style={styles.settingTitle}>Installed Version</Text>
+                  <Text style={styles.settingDesc}>Pocket Penny Journal</Text>
+                </View>
+                <View style={[styles.pillTag, { backgroundColor: COLORS.butter }]}>
+                  <Text style={styles.pillTagText}>v{currentVersion}</Text>
+                </View>
+              </View>
+            </NeoCard>
+
+            {/* Zero Data Loss Guarantee Card */}
+            <NeoCard
+              shadowOffsetX={2}
+              shadowOffsetY={2.5}
+              borderRadius={20}
+              backgroundColor="#E8F8F0"
+              borderColor="#2D8C65"
+              style={{ padding: 14, marginBottom: 14 }}
+            >
+              <View style={{ flexDirection: "row", gap: 10, alignItems: "flex-start" }}>
+                <View style={styles.guaranteeIconCircle}>
+                  <ShieldCheck size={16} color="#2D8C65" strokeWidth={2.4} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.guaranteeTitle}>Safe Updates Guaranteed</Text>
+                  <Text style={styles.guaranteeBody}>
+                    Updates install smoothly without erasing your entries. Your journal and balance are always protected on your device.
+                  </Text>
+                </View>
+              </View>
+            </NeoCard>
+
+            {/* Manual Update Check Button */}
+            <Pressable
+              onPress={handleManualCheckUpdate}
+              disabled={checkingUpdate}
+              style={({ pressed }) => [
+                styles.updateButton,
+                pressed && { opacity: 0.88, transform: [{ scale: 0.98 }] },
+              ]}
+            >
+              {checkingUpdate ? (
+                <>
+                  <ActivityIndicator size="small" color={COLORS.cream} />
+                  <Text style={styles.updateButtonText}>Checking for updates...</Text>
+                </>
+              ) : (
+                <>
+                  <RefreshCw size={15} color={COLORS.cream} strokeWidth={2.2} />
+                  <Text style={styles.updateButtonText}>Check for Updates Now</Text>
+                </>
+              )}
+            </Pressable>
+
+            {/* Update Notice Banner */}
+            {updateNotice && (
+              <View
+                style={[
+                  styles.noticeBox,
+                  updateNotice.type === "success"
+                    ? styles.noticeBoxSuccess
+                    : styles.noticeBoxInfo,
+                  { marginTop: 14 },
+                ]}
+              >
+                <Check
+                  size={16}
+                  color={updateNotice.type === "success" ? "#2D8C65" : COLORS.ink}
+                  strokeWidth={2.2}
+                />
+                <Text
+                  style={[
+                    styles.noticeText,
+                    {
+                      color: updateNotice.type === "success" ? "#1F6347" : COLORS.ink,
+                    },
+                  ]}
+                >
+                  {updateNotice.message}
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
+
+        {meSubPage === "about" && (
+          <View>
+            <View style={styles.subPageHeader}>
+              <Pressable
+                onPress={() => {
+                  safeHaptic.light();
+                  setMeSubPage("main");
+                }}
+                style={styles.subPageBackButton}
+                hitSlop={8}
+                accessibilityLabel="Back to Notebook"
+              >
+                <ChevronLeft size={20} color={COLORS.ink} strokeWidth={2.4} />
+              </Pressable>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.tabScreenTitle}>About Pocket ✿</Text>
+                <Text style={styles.tabScreenSubtitle}>Mindful money & offline design</Text>
+              </View>
+            </View>
+
+            <NeoCard
+              shadowOffsetX={2}
+              shadowOffsetY={2.5}
+              borderRadius={20}
+              backgroundColor={COLORS.cream}
+              style={{ padding: 16, marginBottom: 14 }}
+            >
+              <Text style={styles.aboutHeadline}>
+                A simple, private way to track your spending.
+              </Text>
+              <Text style={styles.aboutBody}>
+                Pocket helps you build mindful money habits by noting your daily expenses and income in just a few taps. No ads, no tracking, and no account needed.
+              </Text>
+
+              <View style={styles.rowDivider} />
+
+              <View style={styles.aboutFeatureList}>
+                <View style={styles.aboutFeatureRow}>
+                  <View style={[styles.aboutFeatureIconBox, { backgroundColor: "#E6FAF0" }]}>
+                    <ShieldCheck size={16} color="#2D8C65" strokeWidth={2.4} />
+                  </View>
+                  <View style={styles.aboutFeatureTextCol}>
+                    <Text style={styles.aboutFeatureTitle}>100% Private on Your Phone</Text>
+                    <Text style={styles.aboutFeatureDesc}>
+                      Everything you write stays on your device. Nobody else sees your money.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.aboutFeatureRow}>
+                  <View style={[styles.aboutFeatureIconBox, { backgroundColor: "#FFF4DC" }]}>
+                    <Sparkles size={16} color="#B45309" strokeWidth={2.4} />
+                  </View>
+                  <View style={styles.aboutFeatureTextCol}>
+                    <Text style={styles.aboutFeatureTitle}>Quick & Simple</Text>
+                    <Text style={styles.aboutFeatureDesc}>
+                      Log expenses in 3 seconds with cozy categories and notes.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.aboutFeatureRow}>
+                  <View style={[styles.aboutFeatureIconBox, { backgroundColor: "#F3EEFF" }]}>
+                    <Cloud size={16} color="#7A5299" strokeWidth={2.4} />
+                  </View>
+                  <View style={styles.aboutFeatureTextCol}>
+                    <Text style={styles.aboutFeatureTitle}>Sync Across Devices (Optional)</Text>
+                    <Text style={styles.aboutFeatureDesc}>
+                      Sign in only if you want your journal backed up on multiple devices.
+                    </Text>
+                  </View>
+                </View>
+              </View>
+
+              <View style={styles.rowDivider} />
+
+              <View style={styles.systemInfoRow}>
+                <Text style={styles.systemLabel}>App Version</Text>
+                <Text style={styles.systemVal}>v{currentVersion}</Text>
+              </View>
+              <View style={styles.systemInfoRow}>
+                <Text style={styles.systemLabel}>Storage Engine</Text>
+                <Text style={styles.systemVal}>Local SQLite</Text>
+              </View>
+              <View style={[styles.systemInfoRow, { borderBottomWidth: 0 }]}>
+                <Text style={styles.systemLabel}>Philosophy</Text>
+                <Text style={styles.systemVal}>Calm & Offline</Text>
+              </View>
+            </NeoCard>
+
+            <View style={styles.modalFooter}>
+              <Text style={styles.footerNoteText}>
+                crafted with care · offline & private by design ✿
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {meSubPage === "currency" && (
+          <View>
+            <View style={styles.subPageHeader}>
+              <Pressable
+                onPress={() => {
+                  safeHaptic.light();
+                  setMeSubPage("main");
+                  setCurrencySearch("");
+                }}
+                style={styles.subPageBackButton}
+                hitSlop={8}
+                accessibilityLabel="Back to Notebook"
+              >
+                <ChevronLeft size={20} color={COLORS.ink} strokeWidth={2.4} />
+              </Pressable>
+              <View style={{ flex: 1, marginLeft: 12 }}>
+                <Text style={styles.tabScreenTitle}>Select Currency 🪙</Text>
+                <Text style={styles.tabScreenSubtitle}>Default for balance & entries</Text>
+              </View>
+            </View>
+
+            {/* Search Input */}
+            <View style={styles.currencySearchBar}>
+              <Search size={15} color={COLORS.inkSoft} strokeWidth={2.2} />
+              <TextInput
+                value={currencySearch}
+                onChangeText={setCurrencySearch}
+                placeholder="Search currency, code or country..."
+                placeholderTextColor={COLORS.inkSoft}
+                style={styles.currencySearchInput}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {currencySearch.length > 0 && (
+                <Pressable
+                  onPress={() => setCurrencySearch("")}
+                  hitSlop={8}
+                  style={styles.currencyClearSearchBtn}
+                >
+                  <X size={14} color={COLORS.inkSoft} />
+                </Pressable>
+              )}
+            </View>
+
+            {/* Currency List */}
+            <View style={{ gap: 8, marginTop: 12 }}>
+              {filteredCurrencies.length === 0 ? (
+                <View style={styles.emptySearchBox}>
+                  <Text style={styles.emptySearchText}>
+                    No currency found matching "{currencySearch}"
+                  </Text>
+                </View>
+              ) : (
+                filteredCurrencies.map((curr) => {
+                  const isSelected = curr.code === currency.code;
+                  return (
+                    <Pressable
+                      key={curr.code}
+                      onPress={() => {
+                        safeHaptic.selection();
+                        handleSelectCurrency(curr);
+                        setMeSubPage("main");
+                        setCurrencySearch("");
+                      }}
+                      style={({ pressed }) => [
+                        styles.currencyItemRow,
+                        isSelected && styles.currencyItemRowSelected,
+                        pressed && { opacity: 0.75 },
+                      ]}
+                    >
+                      <View style={styles.currencyFlagBubble}>
+                        <Text style={styles.currencyFlagText}>{curr.flag}</Text>
+                      </View>
+
+                      <View style={styles.currencyTextCol}>
+                        <View style={styles.currencyCodeRow}>
+                          <Text style={styles.currencyCodeText}>{curr.code}</Text>
+                          <View style={styles.currencySymbolPill}>
+                            <Text style={styles.currencySymbolPillText}>
+                              {curr.symbol}
+                            </Text>
+                          </View>
+                        </View>
+                        <Text style={styles.currencyLabelText}>{curr.label}</Text>
+                      </View>
+
+                      {isSelected ? (
+                        <View style={styles.currencyCheckBadge}>
+                          <Check size={13} color="#1F6347" strokeWidth={2.6} />
+                        </View>
+                      ) : (
+                        <View style={styles.currencyUncheckedCircle} />
+                      )}
+                    </Pressable>
+                  );
+                })
+              )}
+            </View>
+          </View>
+        )}
+
+        {meSubPage === "main" && (
+          <View>
+            <View style={styles.tabScreenHeader}>
+              <Text style={styles.tabScreenTitle}>My Notebook 📖</Text>
+              <Text style={styles.tabScreenSubtitle}>Preferences, system, and backups</Text>
+            </View>
+
+            {/* Hero Pocket Branding Card */}
+            <NeoCard
+              shadowOffsetX={3}
+              shadowOffsetY={4}
+              borderRadius={24}
+              backgroundColor={COLORS.cream}
+              style={[styles.heroCardContent, { marginBottom: 16 }]}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                <View style={[styles.brandPocketBody, { width: 44, height: 44, borderRadius: 16 }]}>
+                  <Text style={[styles.brandIconText, { fontSize: 24 }]}>p</Text>
+                </View>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Text style={styles.brandTitle}>pocket.</Text>
+                    <View style={styles.heroVersionBadge}>
+                      <Text style={styles.heroVersionText}>v{currentVersion}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.brandSubtitle}>
+                    penny journal · {txns.length} entries recorded
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.heroMottoBox}>
+                <Sparkles size={12} color="#D97706" />
+                <Text style={styles.heroMottoText}>
+                  "a steady little habit beats a big reset ✿"
+                </Text>
+              </View>
+            </NeoCard>
+
+            {/* Direct Preferences Section */}
+            <View style={styles.meSectionHeader}>
+              <Text style={styles.sectionEyebrow}>PREFERENCES</Text>
+            </View>
+            <NeoCard
+              shadowOffsetX={2}
+              shadowOffsetY={2.5}
+              borderRadius={20}
+              backgroundColor={COLORS.cream}
+              style={{ padding: 14, marginBottom: 18 }}
+            >
+              {/* Default Currency Selector */}
+              <Pressable
+                onPress={() => {
+                  safeHaptic.selection();
+                  setMeSubPage("currency");
+                }}
+                style={styles.settingItemRow}
+              >
+                <View style={[styles.settingIconBox, { backgroundColor: "#FFF4DC" }]}>
+                  <Coins size={16} color="#B45309" strokeWidth={2.2} />
+                </View>
+                <View style={styles.settingTextCol}>
+                  <Text style={styles.settingTitle}>Default Currency</Text>
+                  <Text style={styles.settingDesc}>
+                    {currency.flag} {currency.label}
+                  </Text>
+                </View>
+                <View style={styles.currencySelectPill}>
+                  <Text style={styles.currencySelectPillText}>
+                    {currency.symbol} {currency.code}
+                  </Text>
+                  <ChevronRight size={14} color={COLORS.inkSoft} strokeWidth={2.4} />
+                </View>
+              </Pressable>
+
+              <View style={styles.rowDivider} />
+
+              {/* Live Rate Conversion Switch */}
+              <Pressable
+                onPress={() => {
+                  safeHaptic.selection();
+                  handleToggleLiveConversion(!liveConversionEnabled);
+                }}
+                style={styles.settingItemRow}
+              >
+                <View style={[styles.settingIconBox, { backgroundColor: "#EBF3FE" }]}>
+                  <ArrowLeftRight size={16} color="#2563EB" strokeWidth={2.2} />
+                </View>
+                <View style={styles.settingTextCol}>
+                  <Text style={styles.settingTitle}>Live Conversion</Text>
+                  <Text style={styles.settingDesc}>
+                    {liveConversionEnabled
+                      ? "Converts amounts using live market rates"
+                      : "Changes symbol only (keeps raw amount)"}
+                  </Text>
+                </View>
+                <View
+                  style={[
+                    styles.toggleSwitchTrack,
+                    liveConversionEnabled && styles.toggleSwitchTrackActive,
+                  ]}
+                >
+                  <View
+                    style={[
+                      styles.toggleSwitchThumb,
+                      liveConversionEnabled && styles.toggleSwitchThumbActive,
+                    ]}
+                  />
+                </View>
+              </Pressable>
+            </NeoCard>
+
+            {/* System & About Navigation Hub */}
+            <View style={styles.meSectionHeader}>
+              <Text style={styles.sectionEyebrow}>SYSTEM & ABOUT</Text>
+            </View>
+            <View style={{ gap: 10, marginBottom: 20 }}>
+              {/* App Updates & Safety */}
+              <NeoCard
+                onPress={() => {
+                  safeHaptic.selection();
+                  setMeSubPage("updates");
+                }}
+                shadowOffsetX={2}
+                shadowOffsetY={2}
+                borderRadius={18}
+                backgroundColor={COLORS.cream}
+                style={[styles.txnCard, { justifyContent: "space-between" }]}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                  <View style={[styles.settingIconBox, { backgroundColor: "#E6FAF0" }]}>
+                    <Smartphone size={16} color="#2D8C65" strokeWidth={2.2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingTitle}>App Updates & Safety</Text>
+                    <Text style={styles.settingDesc}>v{currentVersion} · Safe update guarantee</Text>
+                  </View>
+                </View>
+                <ChevronRight size={18} color={COLORS.inkSoft} />
+              </NeoCard>
+
+              {/* About Pocket */}
+              <NeoCard
+                onPress={() => {
+                  safeHaptic.selection();
+                  setMeSubPage("about");
+                }}
+                shadowOffsetX={2}
+                shadowOffsetY={2}
+                borderRadius={18}
+                backgroundColor={COLORS.cream}
+                style={[styles.txnCard, { justifyContent: "space-between" }]}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                  <View style={[styles.settingIconBox, { backgroundColor: "#FFF4DC" }]}>
+                    <Sparkles size={16} color="#B45309" strokeWidth={2.2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingTitle}>About Pocket</Text>
+                    <Text style={styles.settingDesc}>Privacy, mindful logging & story</Text>
+                  </View>
+                </View>
+                <ChevronRight size={18} color={COLORS.inkSoft} />
+              </NeoCard>
+
+              {/* Cloud Sync & Backup */}
+              <NeoCard
+                onPress={() => {
+                  safeHaptic.selection();
+                  setShowCloudModal(true);
+                }}
+                shadowOffsetX={2}
+                shadowOffsetY={2}
+                borderRadius={18}
+                backgroundColor={COLORS.cream}
+                style={[styles.txnCard, { justifyContent: "space-between" }]}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                  <View style={[styles.settingIconBox, { backgroundColor: "#F3EEFF" }]}>
+                    <Cloud size={16} color="#7A5299" strokeWidth={2.2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.settingTitle}>Cloud Sync & Backup</Text>
+                    <Text style={styles.settingDesc}>Multi-device backups & restore</Text>
+                  </View>
+                </View>
+                <ChevronRight size={18} color={COLORS.inkSoft} />
+              </NeoCard>
+            </View>
+          </View>
+        )}
+      </ScrollView>
+    );
+  };
 
   // -------------------------------------------------------------
   // OPENING SCENE / WELCOME SPLASH
@@ -1323,300 +2883,183 @@ export default function HomeScreen() {
   // MAIN APPLICATION SCREEN
   // -------------------------------------------------------------
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
-      {/* App Header */}
-      <View style={[styles.header, { paddingHorizontal: horizontalPad }]}>
-        <Pressable
-          onPress={() => {
-            safeHaptic.light();
-            setSelectedTag(null);
-            setSelectedTypeFilter(null);
-            setSearchQuery("");
-            setShowSearch(false);
-            (scrollRef.current as any)?.scrollToOffset
-              ? (scrollRef.current as any).scrollToOffset({ offset: 0, animated: true })
-              : scrollRef.current?.scrollTo?.({ y: 0, animated: true });
+    <View style={styles.container}>
+      {activeBottomTab === "journal" && (
+        <FlashList
+          ref={scrollRef}
+          data={feedItems}
+          renderItem={renderFeedItem}
+          keyExtractor={(item) => item.id}
+          getItemType={(item) => item.type}
+          alwaysBounceVertical={true}
+          showsVerticalScrollIndicator={false}
+          style={{ flex: 1, width: "100%" }}
+          contentContainerStyle={{
+            ...styles.scrollContent,
+            paddingHorizontal: horizontalPad,
+            paddingTop: insets.top + 4,
+            paddingBottom: insets.bottom + 95,
           }}
-          style={styles.headerLeft}
-          hitSlop={8}
-        >
-          <View style={[styles.brandIconWrapper, isCompact && { width: 38, height: 38 }]}>
-            {/* Peeking Mini Penny Coin */}
-            <View style={[styles.brandPennyCoin, isCompact && { width: 14, height: 14, top: 0, right: 2 }]}>
-              <Text style={[styles.brandCoinSymbol, isCompact && { fontSize: 7, lineHeight: 8.5 }]}>
-                {currency.symbol.length > 2 ? currency.symbol[0] : currency.symbol}
-              </Text>
-            </View>
-
-            {/* Mini Pocket Squircle Body */}
-            <View style={[styles.brandPocketBody, isCompact && { width: 32, height: 32, borderRadius: 11 }]}>
-              <View style={[styles.brandPocketTopStitch, isCompact && { top: 5, left: 4, right: 4 }]} />
-              <View style={[styles.brandRivet, { left: isCompact ? 3 : 4 }]} />
-              <View style={[styles.brandRivet, { right: isCompact ? 3 : 4 }]} />
-              <Text style={[styles.brandIconText, isCompact && { fontSize: 18 }]}>p</Text>
-            </View>
-          </View>
-          <View>
-            <Text style={[styles.brandTitle, isCompact && { fontSize: 18, lineHeight: 20 }]}>pocket.</Text>
-            <Text style={styles.brandSubtitle}>penny journal</Text>
-          </View>
-        </Pressable>
-
-        <View style={[styles.headerRight, isCompact && { gap: 6 }]}>
-          <Pressable
-            onPress={() => {
-              safeHaptic.selection();
-              setShowSettingsModal(true);
-            }}
-            style={[styles.headerIconButton, isCompact && { width: 30, height: 30, borderRadius: 10 }]}
-            hitSlop={8}
-            accessibilityLabel="Open Settings & About"
-          >
-            <Settings size={isCompact ? 14 : 15} color={COLORS.ink} strokeWidth={2.2} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              safeHaptic.selection();
-              setShowCloudModal(true);
-            }}
-            style={[styles.headerIconButton, isCompact && { width: 30, height: 30, borderRadius: 10 }]}
-            hitSlop={8}
-            accessibilityLabel="Open Cloud Sync & Backup"
-          >
-            <Cloud size={isCompact ? 14 : 15} color={COLORS.ink} strokeWidth={2.2} />
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              safeHaptic.selection();
-              setShowSearch((prev) => !prev);
-            }}
-            style={[
-              styles.headerIconButton,
-              isCompact && { width: 30, height: 30, borderRadius: 10 },
-              showSearch && { backgroundColor: COLORS.ink, borderColor: COLORS.ink },
-            ]}
-          >
-            <Search
-              size={isCompact ? 14 : 15}
-              color={showSearch ? COLORS.cream : COLORS.ink}
-              strokeWidth={2.2}
-            />
-          </Pressable>
-
-          {!isCompact && (
-            <Pressable
-              onPress={() => {
-                safeHaptic.selection();
-                if (timeframeMode === "daily") {
-                  setTimeframeMode("week");
-                  setPeriodOffset(0);
-                } else if (timeframeMode === "week") {
-                  setTimeframeMode("month");
-                  setPeriodOffset(0);
-                } else {
-                  setTimeframeMode("daily");
-                  setPeriodOffset(0);
-                }
-              }}
-              style={({ pressed }) => [
-                styles.headerBadge,
-                pressed && { opacity: 0.75, transform: [{ scale: 0.96 }] },
-              ]}
-              hitSlop={8}
-            >
-              <Text style={styles.headerBadgeText}>
-                {headerBadgeLabel}
-              </Text>
-            </Pressable>
-          )}
-        </View>
-      </View>
-
-      {/* Expandable Search Input */}
-      {showSearch && (
-        <View style={[styles.searchBarContainer, { paddingHorizontal: horizontalPad }]}>
-          <View style={styles.searchBarWrapper}>
-            <Search size={16} color={COLORS.inkSoft} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search by note, amount, category..."
-              placeholderTextColor={COLORS.inkSoft}
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoFocus
-            />
-            {searchQuery.length > 0 ? (
-              <Pressable
-                onPress={() => setSearchQuery("")}
-                style={styles.searchClearBtn}
-              >
-                <X size={14} color={COLORS.ink} />
-              </Pressable>
-            ) : null}
-          </View>
-        </View>
+          ListHeaderComponent={renderListHeader}
+          ListEmptyComponent={renderListEmpty}
+          ListFooterComponent={renderListFooter}
+        />
       )}
 
-      {/* Timeframe Mode Selector (Daily | Week | Month | All History) */}
-      <View style={[styles.timeframeSegmentContainer, { paddingHorizontal: horizontalPad }]}>
-        <View style={styles.timeframeSegment}>
+      {activeBottomTab === "insights" && renderInsightsTab()}
+      {activeBottomTab === "piggy" && renderPiggyTab()}
+      {activeBottomTab === "me" && renderMeTab()}
+
+      {/* Floating Add Entry Button & Cozy Bottom Tab Bar */}
+      <View
+        pointerEvents="box-none"
+        style={[
+          styles.bottomBarWrapper,
+          { paddingBottom: Math.max(insets.bottom, 6) },
+        ]}
+      >
+        {/* Floating Add Entry Pill */}
+        <View style={{ position: "relative", marginBottom: -18, zIndex: 35 }}>
+          {/* Solid Neobrutalist Shadow Underlay */}
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              top: 3.5,
+              left: 2,
+              right: 0,
+              bottom: 0,
+              borderRadius: 9999,
+              backgroundColor: COLORS.ink,
+            }}
+          />
           <Pressable
-            onPress={() => handleSelectMode("daily")}
-            style={[
-              styles.timeframeBtn,
-              timeframeMode === "daily" && styles.timeframeBtnActive,
+            onPress={handleOpenCreate}
+            style={({ pressed }) => [
+              styles.floatingAddBtn,
+              { marginRight: 2, marginBottom: 3.5 },
+              pressed && {
+                transform: [{ translateX: 1.5 }, { translateY: 2.5 }],
+              },
             ]}
+            hitSlop={8}
+            accessibilityLabel="Add Entry"
           >
-            <Sun
-              size={12}
-              color={timeframeMode === "daily" ? COLORS.cream : COLORS.inkSoft}
+            <Plus size={18} color={COLORS.cream} strokeWidth={3} />
+            <Text style={styles.floatingAddBtnText}>Add Entry</Text>
+          </Pressable>
+        </View>
+
+        {/* Tab Navigation Footer */}
+        <View style={styles.bottomTabBar}>
+          {/* Tab: Journal */}
+          <Pressable
+            onPress={() => {
+              safeHaptic.selection();
+              setActiveBottomTab("journal");
+            }}
+            style={styles.bottomTabItem}
+            accessibilityLabel="Journal view"
+          >
+            <BookOpen
+              size={20}
+              color={activeBottomTab === "journal" ? COLORS.ink : COLORS.inkSoft}
+              strokeWidth={activeBottomTab === "journal" ? 2.5 : 2}
             />
             <Text
               style={[
-                styles.timeframeBtnText,
-                isVeryCompact && { fontSize: 10.5 },
-                timeframeMode === "daily" && styles.timeframeBtnTextActive,
+                styles.bottomTabLabel,
+                activeBottomTab === "journal"
+                  ? styles.bottomTabLabelActive
+                  : styles.bottomTabLabelInactive,
               ]}
             >
-              Daily
+              Journal
             </Text>
           </Pressable>
 
+          {/* Tab: Insights */}
           <Pressable
-            onPress={() => handleSelectMode("week")}
-            style={[
-              styles.timeframeBtn,
-              timeframeMode === "week" && styles.timeframeBtnActive,
-            ]}
+            onPress={() => {
+              safeHaptic.selection();
+              setActiveBottomTab("insights");
+            }}
+            style={styles.bottomTabItem}
+            accessibilityLabel="Insights view"
           >
-            <Clock
-              size={12}
-              color={timeframeMode === "week" ? COLORS.cream : COLORS.inkSoft}
+            <PieChart
+              size={20}
+              color={activeBottomTab === "insights" ? COLORS.ink : COLORS.inkSoft}
+              strokeWidth={activeBottomTab === "insights" ? 2.5 : 2}
             />
             <Text
               style={[
-                styles.timeframeBtnText,
-                isVeryCompact && { fontSize: 10.5 },
-                timeframeMode === "week" && styles.timeframeBtnTextActive,
+                styles.bottomTabLabel,
+                activeBottomTab === "insights"
+                  ? styles.bottomTabLabelActive
+                  : styles.bottomTabLabelInactive,
               ]}
             >
-              Week
+              Insights
             </Text>
           </Pressable>
 
+          {/* Center Spacer to frame the floating Add button */}
+          <View style={styles.bottomTabSpacer} />
+
+          {/* Tab: Piggy */}
           <Pressable
-            onPress={() => handleSelectMode("month")}
-            style={[
-              styles.timeframeBtn,
-              timeframeMode === "month" && styles.timeframeBtnActive,
-            ]}
+            onPress={() => {
+              safeHaptic.selection();
+              setActiveBottomTab("piggy");
+            }}
+            style={styles.bottomTabItem}
+            accessibilityLabel="Piggy savings view"
           >
-            <Calendar
-              size={12}
-              color={timeframeMode === "month" ? COLORS.cream : COLORS.inkSoft}
+            <PiggyBank
+              size={20}
+              color={activeBottomTab === "piggy" ? COLORS.ink : COLORS.inkSoft}
+              strokeWidth={activeBottomTab === "piggy" ? 2.5 : 2}
             />
             <Text
               style={[
-                styles.timeframeBtnText,
-                isVeryCompact && { fontSize: 10.5 },
-                timeframeMode === "month" && styles.timeframeBtnTextActive,
+                styles.bottomTabLabel,
+                activeBottomTab === "piggy"
+                  ? styles.bottomTabLabelActive
+                  : styles.bottomTabLabelInactive,
               ]}
             >
-              Month
+              Piggy
             </Text>
           </Pressable>
 
+          {/* Tab: Me */}
           <Pressable
-            onPress={() => handleSelectMode("history")}
-            style={[
-              styles.timeframeBtn,
-              timeframeMode === "history" && styles.timeframeBtnActive,
-            ]}
+            onPress={() => {
+              safeHaptic.selection();
+              setActiveBottomTab("me");
+              setMeSubPage("main");
+            }}
+            style={styles.bottomTabItem}
+            accessibilityLabel="My Profile and Settings view"
           >
-            <Archive
-              size={12}
-              color={timeframeMode === "history" ? COLORS.cream : COLORS.inkSoft}
+            <Smile
+              size={20}
+              color={activeBottomTab === "me" ? COLORS.ink : COLORS.inkSoft}
+              strokeWidth={activeBottomTab === "me" ? 2.5 : 2}
             />
             <Text
               style={[
-                styles.timeframeBtnText,
-                isVeryCompact && { fontSize: 10.5 },
-                timeframeMode === "history" && styles.timeframeBtnTextActive,
+                styles.bottomTabLabel,
+                activeBottomTab === "me"
+                  ? styles.bottomTabLabelActive
+                  : styles.bottomTabLabelInactive,
               ]}
             >
-              {isVeryCompact ? "All" : isCompact ? "History" : "All History"}
+              Me
             </Text>
           </Pressable>
         </View>
-      </View>
-
-      {/* Period Navigator Bar (Only for Week & Month) */}
-      {currentRange && (
-        <View style={[styles.periodNavigatorBar, { paddingHorizontal: horizontalPad }]}>
-          <Pressable
-            onPress={() => handleShiftPeriod(-1)}
-            style={[styles.periodArrowBtn, isCompact && { width: 28, height: 28, borderRadius: 10 }]}
-            hitSlop={8}
-          >
-            <ChevronLeft size={isCompact ? 16 : 18} color={COLORS.ink} />
-          </Pressable>
-
-          <View style={styles.periodCenterInfo}>
-            <Text style={[styles.periodLabelText, isCompact && { fontSize: 13 }]}>{currentRange.label}</Text>
-            {periodOffset !== 0 && (
-              <Pressable
-                onPress={handleJumpToCurrent}
-                style={styles.jumpCurrentBadge}
-              >
-                <RotateCcw size={10} color={COLORS.peach} />
-                <Text style={styles.jumpCurrentText}>Jump to current</Text>
-              </Pressable>
-            )}
-          </View>
-
-          <Pressable
-            onPress={() => handleShiftPeriod(1)}
-            style={[styles.periodArrowBtn, isCompact && { width: 28, height: 28, borderRadius: 10 }]}
-            hitSlop={8}
-          >
-            <ChevronRight size={isCompact ? 16 : 18} color={COLORS.ink} />
-          </Pressable>
-        </View>
-      )}
-
-      <FlashList
-        ref={scrollRef}
-        data={feedItems}
-        renderItem={renderFeedItem}
-        keyExtractor={(item) => item.id}
-        getItemType={(item) => item.type}
-        alwaysBounceVertical={true}
-        showsVerticalScrollIndicator={false}
-        style={{ flex: 1, width: "100%" }}
-        contentContainerStyle={{
-          ...styles.scrollContent,
-          paddingHorizontal: horizontalPad,
-          paddingBottom: insets.bottom + 140,
-        }}
-        ListHeaderComponent={renderListHeader}
-        ListEmptyComponent={renderListEmpty}
-        ListFooterComponent={renderListFooter}
-      />
-
-      {/* Floating Add Entry Button */}
-      <View style={[styles.fabContainer, { left: horizontalPad, right: horizontalPad, bottom: insets.bottom + 16 }]}>
-        <Pressable
-          onPress={handleOpenCreate}
-          style={[
-            styles.fabButton,
-            isCompact && { paddingVertical: 12, paddingHorizontal: 22 },
-          ]}
-        >
-          <Plus size={isCompact ? 18 : 20} color={COLORS.cream} strokeWidth={2.5} />
-          <Text style={[styles.fabButtonText, isCompact && { fontSize: 15 }]}>Add Entry</Text>
-        </Pressable>
       </View>
 
       {/* Add / Edit Entry Modal */}
@@ -1662,6 +3105,9 @@ export default function HomeScreen() {
                 onPress={() => {
                   safeHaptic.selection();
                   setFormType("expense");
+                  if (!EXPENSE_CATEGORIES.some((c) => c.key === formCategory)) {
+                    setFormCategory("food_beverage");
+                  }
                 }}
                 style={[
                   styles.toggleBtn,
@@ -1682,6 +3128,9 @@ export default function HomeScreen() {
                 onPress={() => {
                   safeHaptic.selection();
                   setFormType("income");
+                  if (!INCOME_CATEGORIES.some((c) => c.key === formCategory)) {
+                    setFormCategory("salary");
+                  }
                 }}
                 style={[
                   styles.toggleBtn,
@@ -1738,7 +3187,7 @@ export default function HomeScreen() {
             {/* Category Tag Selection */}
             <Text style={styles.fieldLabel}>Category Tag</Text>
             <View style={styles.categoryWrap}>
-              {CATEGORIES.map((c) => {
+              {(formType === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => {
                 const active = formCategory === c.key;
                 const col = getCategoryColor(c.bg);
                 return (
@@ -1954,13 +3403,7 @@ export default function HomeScreen() {
         onClose={() => setShowUpdateModal(false)}
       />
 
-      {/* Settings & About Modal */}
-      <SettingsModal
-        visible={showSettingsModal}
-        onClose={() => setShowSettingsModal(false)}
-        currency={currency}
-        onSelectCurrency={handleSelectCurrency}
-      />
+
     </View>
   );
 }
@@ -1977,6 +3420,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-between",
     paddingVertical: 12,
+    marginBottom: 10,
   },
   headerLeft: {
     flexDirection: "row",
@@ -2027,7 +3471,7 @@ const styles = StyleSheet.create({
     height: 38,
     borderRadius: 13,
     backgroundColor: COLORS.peach,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: COLORS.cardBorder,
     justifyContent: "center",
     alignItems: "center",
@@ -2061,43 +3505,35 @@ const styles = StyleSheet.create({
   },
   brandTitle: {
     fontFamily: FONTS.displayBold,
-    fontSize: 20,
+    fontSize: 22,
     color: COLORS.ink,
-    lineHeight: 22,
+    lineHeight: 24,
   },
   brandSubtitle: {
     fontFamily: FONTS.bodyMedium,
-    fontSize: 10,
+    fontSize: 11,
     color: COLORS.inkSoft,
     letterSpacing: 0.5,
   },
   headerRight: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 10,
   },
   headerIconButton: {
-    width: 32,
-    height: 32,
-    borderRadius: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 14,
     backgroundColor: COLORS.cream,
-    borderWidth: 1.5,
+    borderWidth: 2,
     borderColor: COLORS.cardBorder,
     justifyContent: "center",
     alignItems: "center",
-  },
-  headerBadge: {
-    backgroundColor: COLORS.cream,
-    borderRadius: 9999,
-    borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
     ...Platform.select({
       ios: {
         shadowColor: COLORS.ink,
-        shadowOffset: { width: 2, height: 2 },
-        shadowOpacity: 1,
+        shadowOffset: { width: 1.5, height: 2 },
+        shadowOpacity: 0.15,
         shadowRadius: 0,
       },
       android: {
@@ -2135,16 +3571,96 @@ const styles = StyleSheet.create({
     padding: 4,
   },
   timeframeSegmentContainer: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 8,
     marginBottom: 8,
   },
-  timeframeSegment: {
+  horizonCard: {
     flexDirection: "row",
-    backgroundColor: COLORS.cream,
-    borderWidth: 1.5,
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderWidth: 2,
     borderColor: COLORS.cardBorder,
     borderRadius: 9999,
-    padding: 3,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    height: 38,
+  },
+  horizonArrowBtn: {
+    width: 24,
+    height: 24,
+    backgroundColor: "transparent",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  horizonArrowDisabled: {
+    opacity: 0,
+  },
+  horizonCenter: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  horizonDoubleArrowContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 2,
+    marginBottom: 6,
+  },
+  horizonArrowTrackLine: {
+    flex: 1,
+    height: 1,
+    borderStyle: "dashed",
+    borderTopWidth: 1,
+    borderTopColor: "rgba(59, 51, 48, 0.22)",
+    marginHorizontal: 4,
+  },
+  horizonTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  horizonTitleText: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 14,
+    color: COLORS.ink,
+  },
+  horizonDotsContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 6,
+  },
+  horizonDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "rgba(59,51,48,0.22)",
+  },
+  horizonDotActive: {
+    width: 20,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: COLORS.ink,
+  },
+  periodNavigatorBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginBottom: 4,
+  },
+  periodArrowBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: COLORS.cream,
+    borderWidth: 2,
+    borderColor: COLORS.cardBorder,
+    justifyContent: "center",
+    alignItems: "center",
     ...Platform.select({
       ios: {
         shadowColor: COLORS.ink,
@@ -2157,62 +3673,18 @@ const styles = StyleSheet.create({
       },
     }),
   },
-  timeframeBtn: {
-    flex: 1,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 4,
-    paddingVertical: 7,
-    borderRadius: 9999,
-  },
-  timeframeBtnActive: {
-    backgroundColor: COLORS.ink,
-  },
-  timeframeBtnText: {
-    fontFamily: FONTS.bodyBold,
-    fontSize: 11.5,
-    color: COLORS.inkSoft,
-  },
-  timeframeBtnTextActive: {
-    color: COLORS.cream,
-  },
-  periodNavigatorBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 20,
-    paddingVertical: 6,
-    marginBottom: 4,
-  },
-  periodArrowBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 12,
-    backgroundColor: COLORS.cream,
-    borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
-    justifyContent: "center",
-    alignItems: "center",
-    ...Platform.select({
-      ios: {
-        shadowColor: COLORS.ink,
-        shadowOffset: { width: 1, height: 2 },
-        shadowOpacity: 1,
-        shadowRadius: 0,
-      },
-      android: {
-        elevation: 1,
-      },
-    }),
-  },
   periodCenterInfo: {
     alignItems: "center",
   },
-  periodLabelText: {
+  periodLabelMain: {
     fontFamily: FONTS.displayBold,
-    fontSize: 14,
+    fontSize: 15,
     color: COLORS.ink,
+  },
+  periodLabelSub: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 13,
+    color: COLORS.inkSoft,
   },
   jumpCurrentBadge: {
     flexDirection: "row",
@@ -2230,6 +3702,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingTop: 8,
   },
+  heroCardContent: {
+    padding: 20,
+  },
   cardTopRow: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -2240,59 +3715,55 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.2,
     color: COLORS.inkSoft,
+    textTransform: "uppercase",
   },
   sparkleBadge: {
-    backgroundColor: "#FCE7BD",
-    borderRadius: 10,
-    paddingHorizontal: 8,
-    paddingVertical: 2,
-    transform: [{ rotate: "-3deg" }],
+    backgroundColor: "#FEF3D6",
+    borderRadius: 9999,
+    borderWidth: 1,
+    borderColor: "#FCE4A8",
+    paddingHorizontal: 10,
+    paddingVertical: 2.5,
   },
   sparkleText: {
-    fontFamily: FONTS.display,
-    fontSize: 12,
+    fontFamily: FONTS.displayBold,
+    fontSize: 11,
     color: COLORS.ink,
   },
   balanceRow: {
     flexDirection: "row",
     alignItems: "baseline",
-    marginTop: 10,
-  },
-  currencySymbol: {
-    fontFamily: FONTS.display,
-    fontSize: 28,
-    color: COLORS.ink,
-    marginRight: 2,
+    marginTop: 8,
   },
   balanceBigText: {
     fontFamily: FONTS.displayBold,
-    fontSize: 48,
+    fontSize: 44,
     color: COLORS.ink,
-    lineHeight: 54,
+    lineHeight: 50,
   },
   balanceCentsText: {
-    fontFamily: FONTS.display,
-    fontSize: 26,
-    color: COLORS.ink,
+    fontFamily: FONTS.displayBold,
+    fontSize: 28,
+    color: COLORS.inkSoft,
   },
   progressSection: {
     flexDirection: "row",
     gap: 10,
-    marginTop: 16,
+    marginTop: 14,
   },
   progressItem: {
     flex: 1,
     minWidth: 0,
-    backgroundColor: COLORS.paper,
+    backgroundColor: COLORS.cream,
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 16,
     borderWidth: 1.5,
-    borderColor: "transparent",
+    borderColor: "rgba(59, 51, 48, 0.12)",
   },
   progressItemActive: {
     borderColor: COLORS.ink,
-    backgroundColor: COLORS.cream,
+    borderWidth: 2,
   },
   progressHeaderRow: {
     flexDirection: "row",
@@ -2314,10 +3785,10 @@ const styles = StyleSheet.create({
   },
   progressLabel: {
     fontFamily: FONTS.bodyBold,
-    fontSize: 10.5,
+    fontSize: 10,
     color: COLORS.inkSoft,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   filterActivePill: {
     backgroundColor: COLORS.ink,
@@ -2333,14 +3804,15 @@ const styles = StyleSheet.create({
   },
   progressValue: {
     fontFamily: FONTS.displayBold,
-    fontSize: 14.5,
+    fontSize: 15.5,
     marginVertical: 4,
   },
   progressBarTrack: {
-    height: 6,
+    height: 5,
     borderRadius: 9999,
     overflow: "hidden",
-    marginTop: 2,
+    marginTop: 6,
+    backgroundColor: "#EFE7DA",
   },
   progressBarFill: {
     height: "100%",
@@ -2352,8 +3824,8 @@ const styles = StyleSheet.create({
   categoryScroll: {
   },
   chipText: {
-    fontFamily: FONTS.bodyBold,
-    fontSize: 13,
+    fontFamily: FONTS.displayBold,
+    fontSize: 12,
     color: COLORS.ink,
   },
   activeFilterBanner: {
@@ -2412,13 +3884,13 @@ const styles = StyleSheet.create({
     gap: 4,
     backgroundColor: COLORS.cream,
     borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
+    borderColor: "rgba(59, 51, 48, 0.25)",
     borderRadius: 8,
-    paddingHorizontal: 8,
+    paddingHorizontal: 9,
     paddingVertical: 3,
     shadowColor: COLORS.ink,
-    shadowOffset: { width: 1, height: 1 },
-    shadowOpacity: 0.12,
+    shadowOffset: { width: 1, height: 1.5 },
+    shadowOpacity: 0.1,
     shadowRadius: 0,
     elevation: 1,
   },
@@ -2439,6 +3911,7 @@ const styles = StyleSheet.create({
     fontSize: 11,
     letterSpacing: 1.2,
     color: COLORS.inkSoft,
+    textTransform: "uppercase",
   },
   arrowIcon: {
     fontSize: 16,
@@ -2451,7 +3924,8 @@ const styles = StyleSheet.create({
   },
   tapHintText: {
     fontFamily: FONTS.body,
-    fontSize: 11,
+    fontSize: 10,
+    fontStyle: "italic",
     color: COLORS.inkSoft,
   },
   resetButtonText: {
@@ -2462,22 +3936,48 @@ const styles = StyleSheet.create({
   },
   emptyCard: {
     alignItems: "center",
-    paddingVertical: 36,
+    paddingVertical: 28,
+    paddingHorizontal: 20,
+    borderRadius: 24,
+    borderWidth: 2,
+    borderColor: COLORS.cardBorder,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.ink,
+        shadowOffset: { width: 3, height: 4 },
+        shadowOpacity: 1,
+        shadowRadius: 0,
+      },
+      android: {
+        elevation: 4,
+      },
+    }),
+  },
+  emptyEmojiBox: {
+    width: 56,
+    height: 56,
+    borderRadius: 16,
+    backgroundColor: "#FEF3D6",
+    borderWidth: 1,
+    borderColor: "#FCE4A8",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 12,
   },
   emptyEmoji: {
-    fontSize: 36,
+    fontSize: 26,
   },
   emptyTitle: {
     fontFamily: FONTS.displayBold,
-    fontSize: 18,
+    fontSize: 16,
     color: COLORS.ink,
-    marginTop: 8,
   },
   emptySubtitle: {
-    fontFamily: FONTS.body,
-    fontSize: 13,
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 12,
     color: COLORS.inkSoft,
     marginTop: 4,
+    textAlign: "center",
   },
   dayGroupContainer: {
     marginBottom: 16,
@@ -2510,13 +4010,28 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 13,
     marginBottom: 8,
+    backgroundColor: COLORS.cream,
+    borderRadius: 18,
+    borderWidth: 2,
+    borderColor: COLORS.cardBorder,
+    ...Platform.select({
+      ios: {
+        shadowColor: COLORS.ink,
+        shadowOffset: { width: 2, height: 2 },
+        shadowOpacity: 1,
+        shadowRadius: 0,
+      },
+      android: {
+        elevation: 2,
+      },
+    }),
   },
   txnIconBox: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(59, 51, 48, 0.12)",
     justifyContent: "center",
     alignItems: "center",
   },
@@ -2533,14 +4048,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   txnNote: {
-    fontFamily: FONTS.bodyBold,
+    fontFamily: FONTS.displayBold,
     fontSize: 14,
     color: COLORS.ink,
     flexShrink: 1,
   },
   txnMeta: {
     fontFamily: FONTS.body,
-    fontSize: 12,
+    fontSize: 10.5,
     color: COLORS.inkSoft,
     marginTop: 2,
   },
@@ -2549,7 +4064,13 @@ const styles = StyleSheet.create({
   },
   txnAmount: {
     fontFamily: FONTS.displayBold,
-    fontSize: 16,
+    fontSize: 14.5,
+  },
+  txnOrigAmount: {
+    fontFamily: FONTS.body,
+    fontSize: 10,
+    color: COLORS.inkSoft,
+    marginTop: 1,
   },
   deleteButton: {
     marginTop: 4,
@@ -2615,58 +4136,686 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   quoteCard: {
-    backgroundColor: "#DFD7F2",
-    borderRadius: 18,
-    borderWidth: 1.5,
+    backgroundColor: "#F1EEFB",
+    borderRadius: 24,
+    borderWidth: 2,
     borderColor: COLORS.cardBorder,
     padding: 16,
-    marginHorizontal: 4,
-    marginTop: 12,
-    transform: [{ rotate: "-1deg" }],
-  },
-  quoteText: {
-    fontFamily: FONTS.display,
-    fontSize: 13,
-    color: COLORS.ink,
-  },
-  quoteAuthor: {
-    fontFamily: FONTS.bodyMedium,
-    fontSize: 11,
-    color: COLORS.inkSoft,
-    marginTop: 4,
-  },
-  fabContainer: {
-    position: "absolute",
-    left: 20,
-    right: 20,
-    alignItems: "center",
-  },
-  fabButton: {
-    backgroundColor: COLORS.peach,
-    borderRadius: 9999,
-    borderWidth: 1.5,
-    borderColor: COLORS.cardBorder,
-    flexDirection: "row",
-    alignItems: "center",
-    paddingVertical: 14,
-    paddingHorizontal: 26,
-    gap: 8,
+    marginTop: 14,
+    marginBottom: 8,
     ...Platform.select({
       ios: {
         shadowColor: COLORS.ink,
-        shadowOffset: { width: 3, height: 4 },
+        shadowOffset: { width: 3, height: 3 },
         shadowOpacity: 1,
         shadowRadius: 0,
       },
       android: {
-        elevation: 6,
+        elevation: 3,
       },
     }),
   },
-  fabButtonText: {
+  quoteContentRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 10,
+  },
+  quoteSparkleEmoji: {
+    fontSize: 20,
+    marginTop: -2,
+  },
+  quoteTextCol: {
+    flex: 1,
+  },
+  quoteText: {
     fontFamily: FONTS.displayBold,
-    fontSize: 17,
+    fontSize: 13,
+    lineHeight: 18,
+    color: COLORS.ink,
+  },
+  quoteAuthor: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 10,
+    color: COLORS.inkSoft,
+    marginTop: 4,
+    letterSpacing: 0.3,
+  },
+  bottomBarWrapper: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+    zIndex: 30,
+  },
+  floatingAddBtn: {
+    backgroundColor: COLORS.peach,
+    borderRadius: 9999,
+    borderWidth: 2,
+    borderColor: COLORS.cardBorder,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 11,
+    paddingHorizontal: 26,
+    gap: 6,
+  },
+  floatingAddBtnText: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 16,
     color: COLORS.cream,
+    letterSpacing: 0.3,
+  },
+  bottomTabBar: {
+    width: "100%",
+    backgroundColor: "rgba(255, 253, 247, 0.96)",
+    borderTopWidth: 2,
+    borderTopColor: "rgba(59, 51, 48, 0.14)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-around",
+    paddingTop: 10,
+    paddingBottom: 4,
+    paddingHorizontal: 10,
+  },
+  bottomTabItem: {
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 3,
+    minWidth: 50,
+    paddingVertical: 4,
+  },
+  bottomTabLabel: {
+    fontSize: 10,
+    letterSpacing: 0.2,
+  },
+  bottomTabLabelActive: {
+    fontFamily: FONTS.displayBold,
+    color: COLORS.ink,
+  },
+  bottomTabLabelInactive: {
+    fontFamily: FONTS.bodyMedium,
+    color: COLORS.inkSoft,
+  },
+  bottomTabSpacer: {
+    width: 64,
+  },
+  tabScreenHeader: {
+    marginBottom: 16,
+  },
+  tabScreenTitle: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 22,
+    color: COLORS.ink,
+  },
+  tabScreenSubtitle: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 12,
+    color: COLORS.inkSoft,
+    marginTop: 2,
+  },
+  insightCard: {
+    padding: 14,
+    borderRadius: 18,
+    width: "100%",
+  },
+  donutSectionCard: {
+    padding: 16,
+    borderRadius: 24,
+    marginBottom: 16,
+  },
+  donutChartContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 8,
+  },
+  insightHighlightsRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 16,
+    width: "100%",
+  },
+  insightHighlightCard: {
+    flex: 1,
+    paddingVertical: 10,
+    paddingHorizontal: 8,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  insightHighlightEyebrow: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 9.5,
+    letterSpacing: 0.5,
+    color: COLORS.inkSoft,
+    textTransform: "uppercase",
+    marginBottom: 3,
+  },
+  insightHighlightTitle: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 13,
+    color: COLORS.ink,
+    textAlign: "center",
+  },
+  insightHighlightSub: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 10,
+    color: COLORS.inkSoft,
+    marginTop: 2,
+    textAlign: "center",
+  },
+  multiBarContainer: {
+    marginTop: 12,
+    width: "100%",
+  },
+  multiBarTrack: {
+    height: 10,
+    borderRadius: 9999,
+    backgroundColor: "#EFE7DA",
+    flexDirection: "row",
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  multiBarHintRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 6,
+    paddingHorizontal: 2,
+  },
+  multiBarHintText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 10.5,
+    color: COLORS.inkSoft,
+  },
+  resetFilterPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 9999,
+    backgroundColor: COLORS.butter,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+  },
+  resetFilterPillText: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 10,
+    color: COLORS.ink,
+  },
+  listHeaderSubtitle: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 11,
+    color: COLORS.inkSoft,
+  },
+  insightDrilldownContainer: {
+    marginTop: 12,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(59, 51, 48, 0.1)",
+  },
+  drilldownHeader: {
+    marginBottom: 6,
+  },
+  drilldownHeaderText: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 11,
+    color: COLORS.inkSoft,
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
+  },
+  insightDrilldownRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 7,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    backgroundColor: "#F8F5EE",
+    marginBottom: 5,
+  },
+  insightDrilldownNote: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 12.5,
+    color: COLORS.ink,
+  },
+  insightDrilldownDate: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 10.5,
+    color: COLORS.inkSoft,
+    marginTop: 1,
+  },
+  insightDrilldownAmount: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 12.5,
+    color: "#D35433",
+  },
+  insightTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  insightLeftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  insightCatName: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 14,
+    color: COLORS.ink,
+  },
+  insightCatMeta: {
+    fontFamily: FONTS.body,
+    fontSize: 11,
+    color: COLORS.inkSoft,
+    marginTop: 1,
+  },
+  insightAmount: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 14.5,
+    color: "#D35433",
+  },
+  insightPercentage: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 10.5,
+    color: COLORS.inkSoft,
+    marginTop: 1,
+  },
+  insightBarTrack: {
+    height: 6,
+    borderRadius: 9999,
+    backgroundColor: "#EFE7DA",
+    overflow: "hidden",
+    marginTop: 10,
+  },
+  insightBarFill: {
+    height: "100%",
+    borderRadius: 9999,
+  },
+  meSectionHeader: {
+    marginTop: 6,
+    marginBottom: 8,
+  },
+  pillTag: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  pillTagText: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 11,
+    color: COLORS.ink,
+  },
+  sectionEyebrow: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 11,
+    letterSpacing: 0.6,
+    color: COLORS.inkSoft,
+    textTransform: "uppercase",
+  },
+  settingItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 8,
+    gap: 10,
+  },
+  settingIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    borderWidth: 1.2,
+    borderColor: COLORS.cardBorder,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  settingTextCol: {
+    flex: 1,
+  },
+  settingTitle: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 13.5,
+    color: COLORS.ink,
+  },
+  settingDesc: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 11,
+    color: COLORS.inkSoft,
+    marginTop: 1,
+  },
+  currencySelectPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: COLORS.paper,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  currencySelectPillText: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 11.5,
+    color: COLORS.ink,
+  },
+  rowDivider: {
+    height: 1,
+    backgroundColor: "rgba(59, 51, 48, 0.09)",
+    marginVertical: 10,
+  },
+  toggleSwitchTrack: {
+    width: 44,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: "rgba(59, 51, 48, 0.15)",
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+    justifyContent: "center",
+    paddingHorizontal: 2,
+  },
+  toggleSwitchTrackActive: {
+    backgroundColor: COLORS.mint,
+  },
+  toggleSwitchThumb: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.cream,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+  },
+  toggleSwitchThumbActive: {
+    transform: [{ translateX: 18 }],
+  },
+  heroVersionBadge: {
+    backgroundColor: COLORS.butter,
+    paddingHorizontal: 6,
+    paddingVertical: 1.5,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  heroVersionText: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 10,
+    color: COLORS.ink,
+  },
+  heroMottoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FFF8E7",
+    borderWidth: 1,
+    borderColor: "rgba(217, 119, 6, 0.25)",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 12,
+  },
+  heroMottoText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 11,
+    color: "#92400E",
+  },
+  subPageHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  subPageBackButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: COLORS.cream,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  guaranteeIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#C5EED9",
+    borderWidth: 1.2,
+    borderColor: "#2D8C65",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  guaranteeTitle: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 13,
+    color: "#1F6347",
+  },
+  guaranteeBody: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 11.5,
+    color: "#2B5A44",
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  updateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: COLORS.peach,
+    borderRadius: 16,
+    borderWidth: 2,
+    borderColor: COLORS.cardBorder,
+    paddingVertical: 13,
+    paddingHorizontal: 18,
+    marginTop: 12,
+  },
+  updateButtonText: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 13.5,
+    color: COLORS.ink,
+  },
+  noticeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1.2,
+  },
+  noticeBoxSuccess: {
+    backgroundColor: "#E6FAF0",
+    borderColor: "#2D8C65",
+  },
+  noticeBoxInfo: {
+    backgroundColor: "#F3EEFF",
+    borderColor: COLORS.cardBorder,
+  },
+  noticeText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 12,
+    flex: 1,
+  },
+  aboutHeadline: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 15,
+    color: COLORS.ink,
+    lineHeight: 20,
+  },
+  aboutBody: {
+    fontFamily: FONTS.body,
+    fontSize: 12.5,
+    color: COLORS.inkSoft,
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  aboutFeatureList: {
+    gap: 12,
+    marginVertical: 4,
+  },
+  aboutFeatureRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "flex-start",
+  },
+  aboutFeatureIconBox: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    borderWidth: 1.2,
+    borderColor: COLORS.cardBorder,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  aboutFeatureTextCol: {
+    flex: 1,
+  },
+  aboutFeatureTitle: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 12.5,
+    color: COLORS.ink,
+  },
+  aboutFeatureDesc: {
+    fontFamily: FONTS.body,
+    fontSize: 11,
+    color: COLORS.inkSoft,
+    marginTop: 1,
+    lineHeight: 15,
+  },
+  systemInfoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(59, 51, 48, 0.08)",
+  },
+  systemLabel: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 12,
+    color: COLORS.inkSoft,
+  },
+  systemVal: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 12,
+    color: COLORS.ink,
+  },
+  modalFooter: {
+    alignItems: "center",
+    paddingVertical: 12,
+  },
+  footerNoteText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 11,
+    color: COLORS.inkSoft,
+  },
+  currencySearchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.cream,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+    paddingHorizontal: 12,
+    height: 42,
+    gap: 8,
+    marginBottom: 8,
+  },
+  currencySearchInput: {
+    flex: 1,
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 13,
+    color: COLORS.ink,
+    paddingVertical: 0,
+  },
+  currencyClearSearchBtn: {
+    padding: 4,
+  },
+  currencyItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: COLORS.cream,
+    borderRadius: 14,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 10,
+  },
+  currencyItemRowSelected: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#2D8C65",
+  },
+  currencyFlagBubble: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: COLORS.paper,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  currencyFlagText: {
+    fontSize: 18,
+  },
+  currencyTextCol: {
+    flex: 1,
+  },
+  currencyCodeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  currencyCodeText: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 13.5,
+    color: COLORS.ink,
+  },
+  currencySymbolPill: {
+    backgroundColor: COLORS.paper,
+    paddingHorizontal: 6,
+    paddingVertical: 1,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: COLORS.cardBorder,
+  },
+  currencySymbolPillText: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 10.5,
+    color: COLORS.ink,
+  },
+  currencyLabelText: {
+    fontFamily: FONTS.body,
+    fontSize: 11,
+    color: COLORS.inkSoft,
+    marginTop: 2,
+  },
+  currencyCheckBadge: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    backgroundColor: "#C5EED9",
+    borderWidth: 1.2,
+    borderColor: "#2D8C65",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  currencyUncheckedCircle: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.inkMuted,
+  },
+  emptySearchBox: {
+    paddingVertical: 24,
+    alignItems: "center",
+  },
+  emptySearchText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 12.5,
+    color: COLORS.inkSoft,
   },
   modalOverlay: {
     flex: 1,

@@ -24,17 +24,83 @@ function getStorageKey(userId: string | null): string {
 }
 
 /**
+ * Automatically syncs & merges guest transactions into the signed-in user account:
+ * 1. Reads local guest transactions from GUEST_STORAGE_KEY.
+ * 2. If guest transactions exist, merges them with the user's existing transactions.
+ * 3. Saves and uploads the merged transactions to Supabase Cloud & user storage.
+ * 4. Cleans up GUEST_STORAGE_KEY so guest data isn't duplicated on future logins.
+ */
+export async function syncGuestTransactionsToAccount(userId: string): Promise<void> {
+  try {
+    const rawGuest = await AsyncStorage.getItem(GUEST_STORAGE_KEY);
+    if (!rawGuest) return;
+
+    const guestTxns: Txn[] = JSON.parse(rawGuest);
+    if (!Array.isArray(guestTxns) || guestTxns.length === 0) {
+      return;
+    }
+
+    // Retrieve existing user transactions
+    let userTxns: Txn[] = [];
+    if (isSupabaseConfigured) {
+      try {
+        const { data } = await supabase
+          .from("transactions")
+          .select("id, type, amount, category, note, date")
+          .eq("user_id", userId);
+        if (data) {
+          userTxns = data.map((r: any) => ({
+            id: r.id,
+            type: r.type,
+            amount: Number(r.amount),
+            category: r.category,
+            note: r.note || "",
+            date: r.date,
+          }));
+        }
+      } catch {}
+    }
+
+    if (userTxns.length === 0) {
+      const rawUser = await AsyncStorage.getItem(getStorageKey(userId));
+      if (rawUser) {
+        try {
+          const parsed = JSON.parse(rawUser);
+          if (Array.isArray(parsed)) userTxns = parsed;
+        } catch {}
+      }
+    }
+
+    // Deduplicate by transaction id
+    const existingIds = new Set(userTxns.map((t) => t.id));
+    const newFromGuest = guestTxns.filter((t) => !existingIds.has(t.id));
+
+    if (newFromGuest.length > 0) {
+      const merged = [...newFromGuest, ...userTxns].sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+      await saveTransactions(merged);
+    }
+
+    // Clear guest storage now that transactions are safely migrated to the new account
+    await AsyncStorage.removeItem(GUEST_STORAGE_KEY);
+  } catch (err) {
+    console.error("[Storage] Error syncing guest transactions to account:", err);
+  }
+}
+
+/**
  * Loads transactions:
- * 1. If signed in, queries Supabase Cloud directly.
- * 2. If available, checks local SQLite database via PowerSync.
+ * 1. If signed in, queries Supabase Cloud directly. The logged-in account's history takes over.
+ * 2. Checks local SQLite database via PowerSync if available.
  * 3. Falls back to user-scoped local AsyncStorage cache.
- * 4. In guest mode, loads only guest transactions (starts empty []).
+ * 4. In guest mode (signed out), displays preserved local history.
  */
 export async function loadTransactions(): Promise<Txn[]> {
   try {
     const userId = await getActiveUserId();
 
-    // 1. Direct Supabase fetch if signed in
+    // 1. Direct Supabase fetch if signed in (account history takes over)
     if (userId && isSupabaseConfigured) {
       try {
         const { data, error } = await supabase
@@ -53,8 +119,9 @@ export async function loadTransactions(): Promise<Txn[]> {
             date: r.date,
           }));
 
-          // Cache in user-specific key
+          // Cache in user-specific key & mirror to guest key so history is preserved on sign-out
           await AsyncStorage.setItem(getStorageKey(userId), JSON.stringify(userTxns));
+          await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(userTxns));
           return userTxns;
         }
       } catch (err) {
@@ -70,7 +137,7 @@ export async function loadTransactions(): Promise<Txn[]> {
       );
 
       if (rows && rows.length > 0) {
-        return rows.map((r: any) => ({
+        const sqliteTxns: Txn[] = rows.map((r: any) => ({
           id: r.id,
           type: r.type,
           amount: Number(r.amount),
@@ -78,17 +145,37 @@ export async function loadTransactions(): Promise<Txn[]> {
           note: r.note || "",
           date: r.date,
         }));
+        await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(sqliteTxns));
+        return sqliteTxns;
       }
     }
 
-    // 3. User-scoped local cache fallback
+    // 3. User-scoped or guest local cache
     const key = getStorageKey(userId);
     const raw = await AsyncStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
+      if (Array.isArray(parsed) && parsed.length > 0) {
         return parsed;
       }
+    }
+
+    // 4. In guest mode (signed out), if guest key is empty, preserve history from existing user cache
+    if (!userId) {
+      try {
+        const allKeys = await AsyncStorage.getAllKeys();
+        const userKeys = allKeys.filter((k) => k.startsWith("@pocket_user_"));
+        for (let i = userKeys.length - 1; i >= 0; i--) {
+          const uRaw = await AsyncStorage.getItem(userKeys[i]);
+          if (uRaw) {
+            const parsed = JSON.parse(uRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              await AsyncStorage.setItem(GUEST_STORAGE_KEY, uRaw);
+              return parsed;
+            }
+          }
+        }
+      } catch {}
     }
 
     return [];
@@ -180,8 +267,9 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
     const userId = await getActiveUserId();
     const key = getStorageKey(userId);
 
-    // 1. Instant local persistence in user-scoped key
+    // 1. Instant local persistence in user-scoped key and mirror to guest storage
     await AsyncStorage.setItem(key, JSON.stringify(txns));
+    await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(txns));
 
     // 2. PowerSync SQLite persistence (if active)
     const db = getPowerSyncDb();
@@ -224,7 +312,7 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
 
 /**
  * Deletes a single transaction by ID:
- * 1. Removes from local storage cache (guest or user key).
+ * 1. Removes from local storage cache (guest and user key).
  * 2. Deletes from PowerSync SQLite.
  * 3. Deletes from Supabase Cloud (if signed in).
  */
@@ -233,13 +321,14 @@ export async function deleteTransaction(id: string): Promise<void> {
     const userId = await getActiveUserId();
     const key = getStorageKey(userId);
 
-    // 1. Remove from local AsyncStorage cache
+    // 1. Remove from local AsyncStorage cache & mirror to guest storage
     const raw = await AsyncStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
         const filtered = parsed.filter((t: any) => t.id !== id);
         await AsyncStorage.setItem(key, JSON.stringify(filtered));
+        await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(filtered));
       }
     }
 
@@ -273,6 +362,7 @@ export async function clearTransactions(): Promise<void> {
     const userId = await getActiveUserId();
     const key = getStorageKey(userId);
     await AsyncStorage.removeItem(key);
+    await AsyncStorage.removeItem(GUEST_STORAGE_KEY);
 
     const db = getPowerSyncDb();
     if (db) {

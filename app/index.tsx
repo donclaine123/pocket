@@ -51,8 +51,10 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Linking from "expo-linking";
 import Constants from "expo-constants";
+import { extractAuthParams } from "../services/authUtils";
 import { COLORS, FONTS, STYLES } from "../constants/theme";
 import { NeoCard } from "../components/NeoCard";
+import { PocketBrandIcon } from "../components/PocketBrandIcon";
 import { InsightsDonutChart, getCategorySliceColor } from "../components/InsightsDonutChart";
 import Svg, { Line, Path } from "react-native-svg";
 import { CloudSyncModal } from "../components/CloudSyncModal";
@@ -219,6 +221,7 @@ export default function HomeScreen() {
   // In-App Confirmation Dialog States (Works reliably on Web, iOS, Android)
   const [deleteConfirmTxn, setDeleteConfirmTxn] = useState<Txn | null>(null);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
+  const [resetConfirmText, setResetConfirmText] = useState("");
   const [showCloudModal, setShowCloudModal] = useState(false);
   const [cloudModalMode, setCloudModalMode] = useState<
     "signin" | "signup" | "forgot" | "new_password"
@@ -410,6 +413,7 @@ export default function HomeScreen() {
         const accessToken = params.get("access_token");
         const refreshToken = params.get("refresh_token");
         const code = params.get("code");
+        const isRecovery = fullUrl.includes("type=recovery");
 
         if (accessToken && refreshToken) {
           supabase.auth
@@ -418,29 +422,41 @@ export default function HomeScreen() {
               refresh_token: refreshToken,
             })
             .then(() => {
-              setCloudModalMode("new_password");
-              setCloudModalError(null);
-              setShowCloudModal(true);
+              if (isRecovery) {
+                setCloudModalMode("new_password");
+                setCloudModalError(null);
+                setShowCloudModal(true);
+              } else {
+                setShowCloudModal(false);
+              }
             })
             .catch(() => {
-              setCloudModalMode("new_password");
-              setCloudModalError(null);
-              setShowCloudModal(true);
+              if (isRecovery) {
+                setCloudModalMode("new_password");
+                setCloudModalError(null);
+                setShowCloudModal(true);
+              }
             });
         } else if (code) {
           supabase.auth
             .exchangeCodeForSession(code)
             .then(() => {
-              setCloudModalMode("new_password");
-              setCloudModalError(null);
-              setShowCloudModal(true);
+              if (isRecovery) {
+                setCloudModalMode("new_password");
+                setCloudModalError(null);
+                setShowCloudModal(true);
+              } else {
+                setShowCloudModal(false);
+              }
             })
             .catch(() => {
-              setCloudModalMode("new_password");
-              setCloudModalError(null);
-              setShowCloudModal(true);
+              if (isRecovery) {
+                setCloudModalMode("new_password");
+                setCloudModalError(null);
+                setShowCloudModal(true);
+              }
             });
-        } else {
+        } else if (isRecovery) {
           setCloudModalMode("new_password");
           setCloudModalError(null);
           setShowCloudModal(true);
@@ -448,36 +464,53 @@ export default function HomeScreen() {
       }
     }
 
-    // 2. Mobile deep link check (APK: pocket://reset-password#access_token=...)
+    // 2. Mobile deep link check (APK: pocket://reset-password#access_token=... or pocket://auth-callback)
     const handleDeepUrl = (url: string) => {
-      const parsed = Linking.parse(url);
-      const q = parsed.queryParams || {};
-      const accessToken = (q.access_token as string) || null;
-      const refreshToken = (q.refresh_token as string) || null;
-      const code = (q.code as string) || null;
+      const { accessToken, refreshToken, code, tokenHash, type, errorDescription } =
+        extractAuthParams(url);
+      const isRecovery = type === "recovery" || url.includes("type=recovery");
 
       if (accessToken && refreshToken) {
         supabase.auth
           .setSession({ access_token: accessToken, refresh_token: refreshToken })
           .then(() => {
-            setCloudModalMode("new_password");
-            setCloudModalError(null);
-            setShowCloudModal(true);
+            if (isRecovery) {
+              setCloudModalMode("new_password");
+              setCloudModalError(null);
+              setShowCloudModal(true);
+            } else {
+              setShowCloudModal(false);
+            }
           });
       } else if (code) {
         supabase.auth.exchangeCodeForSession(code).then(() => {
-          setCloudModalMode("new_password");
-          setCloudModalError(null);
-          setShowCloudModal(true);
+          if (isRecovery) {
+            setCloudModalMode("new_password");
+            setCloudModalError(null);
+            setShowCloudModal(true);
+          } else {
+            setShowCloudModal(false);
+          }
         });
-      } else if (url.includes("type=recovery") || url.includes("access_token=")) {
+      } else if (tokenHash && type) {
+        supabase.auth.verifyOtp({ token_hash: tokenHash, type: type as any }).then(() => {
+          if (isRecovery) {
+            setCloudModalMode("new_password");
+            setCloudModalError(null);
+            setShowCloudModal(true);
+          } else {
+            setShowCloudModal(false);
+          }
+        });
+      } else if (isRecovery) {
         setCloudModalMode("new_password");
         setCloudModalError(null);
         setShowCloudModal(true);
-      } else if (url.includes("otp_expired") || url.includes("error_code=")) {
+      } else if (url.includes("otp_expired") || url.includes("error_code=") || Boolean(errorDescription)) {
         setCloudModalMode("forgot");
         setCloudModalError(
-          "This password reset link has expired or was already used. Please request a fresh one."
+          errorDescription ||
+            "This password reset or confirmation link has expired. Please request a fresh one."
         );
         setShowCloudModal(true);
       }
@@ -907,11 +940,13 @@ export default function HomeScreen() {
 
   // Confirm Reset Journal
   const handleConfirmReset = async () => {
+    if (resetConfirmText.trim().toLowerCase() !== "confirm") return;
     safeHaptic.warning();
     setTxns([]);
     setSelectedTag(null);
     setSelectedTypeFilter(null);
     setShowResetConfirm(false);
+    setResetConfirmText("");
     await clearTransactions();
   };
 
@@ -1337,42 +1372,10 @@ export default function HomeScreen() {
           style={styles.headerLeft}
           hitSlop={8}
         >
-          <View style={[styles.brandIconWrapper, isCompact && { width: 38, height: 38 }]}>
-            {/* Peeking Mini Penny Coin */}
-            <View style={[styles.brandPennyCoin, isCompact && { width: 14, height: 14, top: 0, right: 2 }]}>
-              <Text style={[styles.brandCoinSymbol, isCompact && { fontSize: 7, lineHeight: 8.5 }]}>
-                {currency.symbol.length > 2 ? currency.symbol[0] : currency.symbol}
-              </Text>
-            </View>
-
-            {/* Mini Pocket Squircle Body with solid shadow underlay */}
-            <View style={{ position: "relative" }}>
-              <View
-                pointerEvents="none"
-                style={{
-                  position: "absolute",
-                  top: 2,
-                  left: 1.5,
-                  right: 0,
-                  bottom: 0,
-                  borderRadius: isCompact ? 11 : 13,
-                  backgroundColor: COLORS.ink,
-                }}
-              />
-              <View
-                style={[
-                  styles.brandPocketBody,
-                  isCompact && { width: 32, height: 32, borderRadius: 11 },
-                  { marginRight: 1.5, marginBottom: 2 },
-                ]}
-              >
-                <View style={[styles.brandPocketTopStitch, isCompact && { top: 5, left: 4, right: 4 }]} />
-                <View style={[styles.brandRivet, { left: isCompact ? 3 : 4 }]} />
-                <View style={[styles.brandRivet, { right: isCompact ? 3 : 4 }]} />
-                <Text style={[styles.brandIconText, isCompact && { fontSize: 18 }]}>p</Text>
-              </View>
-            </View>
-          </View>
+          <PocketBrandIcon
+            size={isCompact ? 38 : 44}
+            currencySymbol={currency.symbol}
+          />
           <View>
             <Text style={[styles.brandTitle, isCompact && { fontSize: 18, lineHeight: 20 }]}>pocket.</Text>
             <Text style={styles.brandSubtitle}>penny journal</Text>
@@ -2559,9 +2562,7 @@ export default function HomeScreen() {
               style={[styles.heroCardContent, { marginBottom: 16 }]}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                <View style={[styles.brandPocketBody, { width: 44, height: 44, borderRadius: 16 }]}>
-                  <Text style={[styles.brandIconText, { fontSize: 24 }]}>p</Text>
-                </View>
+                <PocketBrandIcon size={44} currencySymbol={currency.symbol} />
                 <View style={{ flex: 1 }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     <Text style={styles.brandTitle}>pocket.</Text>
@@ -2733,6 +2734,38 @@ export default function HomeScreen() {
                 <ChevronRight size={18} color={COLORS.inkSoft} />
               </NeoCard>
             </View>
+
+            {/* Danger Zone Section */}
+            <View style={[styles.meSectionHeader, { marginTop: 6 }]}>
+              <Text style={[styles.sectionEyebrow, { color: "#C53030" }]}>DANGER ZONE</Text>
+            </View>
+            <View style={{ marginBottom: 28 }}>
+              <NeoCard
+                onPress={() => {
+                  safeHaptic.warning();
+                  setResetConfirmText("");
+                  setShowResetConfirm(true);
+                }}
+                shadowOffsetX={2}
+                shadowOffsetY={2}
+                borderRadius={18}
+                backgroundColor="#FFF5F5"
+                style={[styles.txnCard, { justifyContent: "space-between", borderColor: "#FEB2B2" }]}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                  <View style={[styles.settingIconBox, { backgroundColor: "#FED7D7" }]}>
+                    <RotateCcw size={16} color="#C53030" strokeWidth={2.2} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={[styles.settingTitle, { color: "#C53030" }]}>Reset Journal</Text>
+                    <Text style={[styles.settingDesc, { color: "#9B2C2C" }]}>
+                      Permanently wipe all transactions & history
+                    </Text>
+                  </View>
+                </View>
+                <ChevronRight size={18} color="#C53030" />
+              </NeoCard>
+            </View>
           </View>
         )}
       </ScrollView>
@@ -2808,33 +2841,19 @@ export default function HomeScreen() {
           {/* Center Brand Logo Icon */}
           <Animated.View
             style={[
-              styles.openingLogoBox,
               {
                 opacity: fadeAnim,
-                transform: [{ scale: scaleAnim }, { rotate: "-8deg" }],
+                transform: [{ scale: scaleAnim }],
+                marginBottom: 16,
+                alignItems: "center",
+                justifyContent: "center",
               },
             ]}
           >
-            {/* Peeking Golden Penny Coin */}
-            <View style={styles.openingPennyCoin}>
-              <View style={styles.openingCoinInnerRing}>
-                <Text style={styles.openingCoinSymbol}>
-                  {currency.symbol.length > 2 ? currency.symbol[0] : currency.symbol}
-                </Text>
-              </View>
-            </View>
-
-            {/* Pocket Squircle Body */}
-            <View style={styles.openingPocketBody}>
-              {/* Pocket Stitch Lines */}
-              <View style={styles.openingPocketTopStitch} />
-              <View style={styles.openingPocketBottomStitch} />
-              {/* Corner Brass Rivets */}
-              <View style={[styles.openingRivet, { left: 8 }]} />
-              <View style={[styles.openingRivet, { right: 8 }]} />
-              {/* Bold Letter 'p' */}
-              <Text style={styles.openingLogoLetter}>p</Text>
-            </View>
+            <PocketBrandIcon
+              size={88}
+              currencySymbol={currency.symbol}
+            />
           </Animated.View>
 
           {/* App Title */}
@@ -3339,42 +3358,94 @@ export default function HomeScreen() {
         </View>
       </Modal>
 
-      {/* In-App Reset Confirmation Modal */}
+      {/* In-App Reset Confirmation Modal (Destructive & Requires Typing "confirm") */}
       <Modal
         visible={showResetConfirm}
         transparent={true}
         animationType="none"
-        onRequestClose={() => setShowResetConfirm(false)}
+        onRequestClose={() => {
+          setShowResetConfirm(false);
+          setResetConfirmText("");
+        }}
       >
-        <View style={styles.confirmModalOverlay}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.confirmModalOverlay}
+        >
           <Pressable
             style={styles.confirmBackdrop}
-            onPress={() => setShowResetConfirm(false)}
+            onPress={() => {
+              setShowResetConfirm(false);
+              setResetConfirmText("");
+            }}
           />
-          <View style={styles.confirmDialogBox}>
-            <View style={[styles.confirmIconBubble, { backgroundColor: "#FFE0D6" }]}>
-              <RotateCcw size={24} color="#E26543" strokeWidth={2.2} />
+          <View style={[styles.confirmDialogBox, { maxWidth: 350 }]}>
+            <View style={[styles.confirmIconBubble, { backgroundColor: "#FED7D7" }]}>
+              <CircleAlert size={26} color="#C53030" strokeWidth={2.4} />
             </View>
-            <Text style={styles.confirmTitle}>Reset Penny Journal?</Text>
-            <Text style={styles.confirmSubtitle}>
-              This will clear all entries from storage. This action cannot be undone.
-            </Text>
+            <Text style={[styles.confirmTitle, { color: "#9B2C2C" }]}>Reset Penny Journal?</Text>
+
+            {/* Explicit Destructive Warning Banner */}
+            <View style={styles.resetWarningBanner}>
+              <Text style={styles.resetWarningTitle}>⚠️ DESTRUCTIVE ACTION</Text>
+              <Text style={styles.resetWarningText}>
+                This will permanently delete all {txns.length} entries from this device and your cloud account. This action cannot be undone.
+              </Text>
+            </View>
+
+            {/* Type "confirm" Verification Input */}
+            <View style={{ width: "100%", marginVertical: 10 }}>
+              <Text style={styles.resetInputLabel}>
+                Type <Text style={{ fontFamily: FONTS.displayBold, color: "#C53030" }}>confirm</Text> below to proceed:
+              </Text>
+              <View style={styles.resetInputWrapper}>
+                <TextInput
+                  style={styles.resetTextInput}
+                  placeholder="confirm"
+                  placeholderTextColor="#A0AEC0"
+                  value={resetConfirmText}
+                  onChangeText={setResetConfirmText}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+              </View>
+            </View>
+
             <View style={styles.confirmButtonsRow}>
               <Pressable
-                onPress={() => setShowResetConfirm(false)}
+                onPress={() => {
+                  safeHaptic.selection();
+                  setShowResetConfirm(false);
+                  setResetConfirmText("");
+                }}
                 style={styles.confirmCancelBtn}
               >
                 <Text style={styles.confirmCancelText}>Cancel</Text>
               </Pressable>
               <Pressable
                 onPress={handleConfirmReset}
-                style={styles.confirmDeleteBtn}
+                disabled={resetConfirmText.trim().toLowerCase() !== "confirm"}
+                style={[
+                  styles.confirmDeleteBtn,
+                  { backgroundColor: "#E53E3E" },
+                  resetConfirmText.trim().toLowerCase() !== "confirm" && {
+                    opacity: 0.45,
+                    backgroundColor: "#CBD5E0",
+                  },
+                ]}
               >
-                <Text style={styles.confirmDeleteText}>Clear All</Text>
+                <Text
+                  style={[
+                    styles.confirmDeleteText,
+                    resetConfirmText.trim().toLowerCase() !== "confirm" && { color: "#718096" },
+                  ]}
+                >
+                  Reset All
+                </Text>
               </Pressable>
             </View>
           </View>
-        </View>
+        </KeyboardAvoidingView>
       </Modal>
 
       {/* Cloud Sync & Backup Modal */}
@@ -5138,6 +5209,52 @@ const styles = StyleSheet.create({
     fontFamily: FONTS.displayBold,
     fontSize: 14,
     color: COLORS.cream,
+  },
+  resetWarningBanner: {
+    backgroundColor: "#FFF5F5",
+    borderWidth: 1.5,
+    borderColor: "#FEB2B2",
+    borderRadius: 14,
+    padding: 12,
+    marginTop: 10,
+    marginBottom: 14,
+    width: "100%",
+  },
+  resetWarningTitle: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 12,
+    color: "#C53030",
+    marginBottom: 4,
+    textAlign: "center",
+  },
+  resetWarningText: {
+    fontFamily: FONTS.body,
+    fontSize: 11,
+    color: "#742A2A",
+    lineHeight: 16,
+    textAlign: "center",
+  },
+  resetInputLabel: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 12,
+    color: COLORS.ink,
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  resetInputWrapper: {
+    backgroundColor: COLORS.paper,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  resetTextInput: {
+    fontFamily: FONTS.displayBold,
+    fontSize: 15,
+    color: COLORS.ink,
+    textAlign: "center",
+    letterSpacing: 1,
   },
   // Opening Scene Styles
   openingContainer: {

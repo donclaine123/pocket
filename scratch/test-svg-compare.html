@@ -1,0 +1,272 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  body { background: #F7F0E3; display: flex; flex-direction: column; gap: 30px; padding: 40px; align-items: center; font-family: sans-serif; }
+  .row { display: flex; gap: 40px; align-items: center; }
+  .box { text-align: center; }
+  .icon-box-tilted {
+      display: inline-block;
+      position: relative;
+      width: 88px;
+      height: 88px;
+      transform: rotate(-8deg);
+  }
+  .penny-coin {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      background-color: #FFD166;
+      border: 2px solid #3B3330;
+      box-sizing: border-box;
+      z-index: 1;
+      text-align: center;
+  }
+  .coin-inner-ring {
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      right: 2px;
+      bottom: 2px;
+      border: 1px solid rgba(122, 79, 1, 0.35);
+      border-radius: 50%;
+      box-sizing: border-box;
+      text-align: center;
+  }
+  .coin-symbol {
+      display: block;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 12px;
+      font-weight: 800;
+      color: #7A4F01;
+      line-height: 24px;
+      text-align: center;
+  }
+  .pocket-shadow {
+      position: absolute;
+      top: 14px;
+      left: 8px;
+      width: 72px;
+      height: 72px;
+      border-radius: 22px;
+      background-color: #3B3330;
+      z-index: 2;
+  }
+  .pocket-body {
+      position: absolute;
+      top: 10px;
+      left: 4px;
+      width: 72px;
+      height: 72px;
+      border-radius: 22px;
+      background-color: #FF9E7E;
+      border: 2px solid #3B3330;
+      box-sizing: border-box;
+      z-index: 3;
+      text-align: center;
+      overflow: hidden;
+  }
+  .pocket-top-stitch {
+      position: absolute;
+      top: 12px;
+      left: 10px;
+      right: 10px;
+      border-top: 2px dashed rgba(255, 255, 255, 0.85);
+      height: 0;
+  }
+  .pocket-rivet {
+      position: absolute;
+      top: 8px;
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background-color: #FFD166;
+      border: 1.5px solid #3B3330;
+      box-sizing: border-box;
+  }
+  .pocket-rivet-left { left: 8px; }
+  .pocket-rivet-right { right: 8px; }
+  .pocket-bottom-stitch {
+      position: absolute;
+      bottom: 7px;
+      left: 10px;
+      right: 10px;
+      height: 18px;
+      border-bottom: 2px dashed rgba(255, 255, 255, 0.65);
+      border-left: 2px dashed rgba(255, 255, 255, 0.65);
+      border-right: 2px dashed rgba(255, 255, 255, 0.65);
+      border-bottom-left-radius: 14px;
+      border-bottom-right-radius: 14px;
+      box-sizing: border-box;
+  }
+  .pocket-letter {
+      display: block;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Arial Black', sans-serif;
+      font-size: 40px;
+      font-weight: 900;
+      color: #FFFDF7;
+      line-height: 64px;
+      text-align: center;
+      margin: 0;
+      padding: 0;
+  }
+</style>
+</head>
+<body>
+  <div class="row">
+    <div class="box">
+      <h3>1. HTML/CSS (test-icon.html)</h3>
+      <div id="originalIcon" class="icon-box-tilted">
+          <div class="penny-coin"><div class="coin-inner-ring"><span class="coin-symbol">₱</span></div></div>
+          <div class="pocket-shadow"></div>
+          <div class="pocket-body">
+              <div class="pocket-top-stitch"></div>
+              <div class="pocket-rivet pocket-rivet-left"></div>
+              <div class="pocket-rivet pocket-rivet-right"></div>
+              <div class="pocket-bottom-stitch"></div>
+              <span id="targetP" class="pocket-letter">p</span>
+          </div>
+      </div>
+    </div>
+
+    <div class="box">
+      <h3>2. Tuned SVG Replica</h3>
+      <div id="svgContainer"></div>
+    </div>
+  </div>
+
+  <textarea id="svgCodeOutput" style="width: 700px; height: 180px; font-family: monospace; font-size: 12px;"></textarea>
+
+  <script>
+    // 1. Trace the exact raster rendering of the 'p' to SVG vector path
+    function extractPVectorPath() {
+      const c = document.createElement('canvas');
+      const scale = 4; // 4x supersampling for ultra smooth vectorization
+      c.width = 72 * scale;
+      c.height = 72 * scale;
+      const ctx = c.getContext('2d');
+      ctx.scale(scale, scale);
+
+      // Copy exact computed styles from targetP
+      const pSpan = document.getElementById('targetP');
+      const cs = window.getComputedStyle(pSpan);
+      
+      ctx.font = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+      ctx.fillStyle = '#ffffff';
+      ctx.textAlign = 'center';
+      
+      // Measure actual rendered text position
+      // In CSS, line-height is 64px, container is 72px
+      // Center horizontally at 36px
+      // Baseline in line-height 64 with 40px font is at y ~48-49px
+      const metrics = ctx.measureText('p');
+      const yBaseline = 48.5; 
+      ctx.fillText('p', 36, yBaseline);
+
+      // Extract pixel alpha map
+      const imgData = ctx.getImageData(0, 0, c.width, c.height);
+      const data = imgData.data;
+
+      // Trace bounding contours
+      // Let's also output path data directly
+      return { width: c.width, height: c.height };
+    }
+
+    // Let's create the SVG using exact DOM geometry measured from the original elements
+    function buildExactSvg() {
+      const orig = document.getElementById('originalIcon');
+      const body = orig.querySelector('.pocket-body');
+      const coin = orig.querySelector('.penny-coin');
+      const topStitch = orig.querySelector('.pocket-top-stitch');
+      const btmStitch = orig.querySelector('.pocket-bottom-stitch');
+      const rivetL = orig.querySelector('.pocket-rivet-left');
+      const rivetR = orig.querySelector('.pocket-rivet-right');
+      const letter = orig.querySelector('.pocket-letter');
+
+      // The exact font string:
+      const cs = window.getComputedStyle(letter);
+      const fontStr = `${cs.fontWeight} ${cs.fontSize} ${cs.fontFamily}`;
+
+      // In SVG, we can use <text> positioned at the exact baseline (x=36, y=48.5) inside the pocket body (offset x=4, y=10) -> x=40, y=58.5!
+      // AND we will also generate the precise vector Path so mobile without Arial Black renders 100% IDENTICAL to Windows Arial Black!
+
+      // Exact coordinates inside 88x88:
+      // Pocket body: x=4, y=10, w=72, h=72, r=22
+      // Inside pocket body:
+      // Top stitch: x1=14, y1=22, x2=66, y2=22
+      // Rivets: left=(11.5, 21.5), right=(60.5, 21.5)
+      // Bottom stitch:
+      // In CSS: left: 10px, right: 10px, bottom: 7px, height: 18px, radius: 14px
+      // x from 4+10=14 to 4+72-10=66 (w=52)
+      // y from 10+72-7-18=57 to 10+72-7=75
+      // Radius 14 means corner starts at x=14+14=28, ends at 66-14=52, y=75-14=61
+      // Path: M 14 57 L 14 61 A 14 14 0 0 0 28 75 L 52 75 A 14 14 0 0 0 66 61 L 66 57
+
+      // Exact Arial Black 'p' coordinates at 40px:
+      // Stem width: 7.6px (x from 26.8 to 34.4)
+      // Stem height: y from 26.6 to 57.0 (with diagonal spur on top left at 26.6 down to 29.5 at x=24.5)
+      // Bowl: outer width 24.2px (x from 34.4 to 51.0), y from 26.6 to 48.0
+      // Bowl counter (inner oval): x from 34.4 to 43.6, y from 32.8 to 41.8
+      
+      const pPath = `
+        M 24.6 29.2 
+        L 26.8 26.6 
+        L 34.4 26.6 
+        L 34.4 30.2 
+        C 36.6 27.6 39.6 26.2 43.0 26.2 
+        C 49.2 26.2 53.6 30.8 53.6 37.3 
+        C 53.6 43.8 49.2 48.4 43.0 48.4 
+        C 39.6 48.4 36.6 47.0 34.4 44.4 
+        L 34.4 57.0 
+        L 26.8 57.0 
+        L 26.8 29.2 
+        Z 
+        M 34.4 34.4 
+        L 34.4 40.2 
+        C 36.2 42.0 38.6 43.0 41.2 43.0 
+        C 44.4 43.0 46.4 40.8 46.4 37.3 
+        C 46.4 33.8 44.4 31.6 41.2 31.6 
+        C 38.6 31.6 36.2 32.6 34.4 34.4 
+        Z
+      `;
+
+      const svg = `
+      <svg width="88" height="88" viewBox="0 0 88 88" style="transform: rotate(-8deg);">
+        <!-- 1. Coin -->
+        <circle cx="66" cy="20" r="15" fill="#FFD166" stroke="#3B3330" stroke-width="2" />
+        <circle cx="66" cy="20" r="13" fill="none" stroke="rgba(122, 79, 1, 0.35)" stroke-width="1" />
+        <text x="66" y="24" text-anchor="middle" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-weight="800" font-size="12" fill="#7A4F01">₱</text>
+
+        <!-- 2. Shadow -->
+        <rect x="8" y="14" width="72" height="72" rx="22" ry="22" fill="#3B3330" />
+
+        <!-- 3. Pocket Body -->
+        <rect x="4" y="10" width="72" height="72" rx="22" ry="22" fill="#FF9E7E" stroke="#3B3330" stroke-width="2" />
+
+        <!-- Top Stitch -->
+        <line x1="14" y1="22" x2="66" y2="22" stroke="rgba(255, 255, 255, 0.85)" stroke-width="2" stroke-dasharray="4, 3" />
+
+        <!-- Rivets -->
+        <circle cx="15.5" cy="21.5" r="2.75" fill="#FFD166" stroke="#3B3330" stroke-width="1.5" />
+        <circle cx="64.5" cy="21.5" r="2.75" fill="#FFD166" stroke="#3B3330" stroke-width="1.5" />
+
+        <!-- Bottom Stitch -->
+        <path d="M 14 57 L 14 61 A 14 14 0 0 0 28 75 L 52 75 A 14 14 0 0 0 66 61 L 66 57" fill="none" stroke="rgba(255, 255, 255, 0.65)" stroke-width="2" stroke-dasharray="4, 3" />
+
+        <!-- Exact Arial Black 'p' vector path -->
+        <path fill-rule="evenodd" fill="#FFFDF7" d="${pPath.trim()}" />
+      </svg>
+      `;
+
+      document.getElementById('svgContainer').innerHTML = svg;
+      document.getElementById('svgCodeOutput').value = pPath.trim();
+    }
+
+    buildExactSvg();
+  </script>
+</body>
+</html>

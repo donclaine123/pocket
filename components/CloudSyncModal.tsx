@@ -15,13 +15,14 @@ import {
 import { COLORS, FONTS, STYLES } from "../constants/theme";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { safeHaptic } from "../services/haptics";
+import { syncGuestTransactionsToAccount } from "../services/storage";
 
 type CloudSyncModalProps = {
   visible: boolean;
   onClose: () => void;
   onSyncComplete?: () => void;
   onSignOut?: () => void;
-  initialMode?: "signin" | "signup" | "forgot" | "new_password";
+  initialMode?: "signin" | "signup" | "forgot" | "new_password" | "verify_otp";
   initialError?: string | null;
 };
 
@@ -35,10 +36,11 @@ export function CloudSyncModal({
 }: CloudSyncModalProps) {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
-  const [authMode, setAuthMode] = useState<"signin" | "signup" | "forgot" | "new_password">("signin");
+  const [authMode, setAuthMode] = useState<"signin" | "signup" | "forgot" | "new_password" | "verify_otp">("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [otpCode, setOtpCode] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{
     email?: string;
     password?: string;
@@ -56,7 +58,9 @@ export function CloudSyncModal({
       setErrorMsg(initialError ?? null);
       setSuccessMsg(null);
       setFieldErrors({});
+      setPassword("");
       setConfirmPassword("");
+      setOtpCode("");
       if (initialMode) {
         setAuthMode(initialMode);
       }
@@ -201,6 +205,40 @@ export function CloudSyncModal({
       return;
     }
 
+    // Verify OTP Code (From email confirmation)
+    if (authMode === "verify_otp") {
+      if (!otpCode.trim()) {
+        setFieldErrors({ password: "Enter the confirmation code from your email." });
+        safeHaptic.warning();
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const { data, error } = await supabase.auth.verifyOtp({
+          email: email.trim(),
+          token: otpCode.trim(),
+          type: "signup",
+        });
+        if (error) throw error;
+        if (data.user?.id) {
+          await syncGuestTransactionsToAccount(data.user.id);
+        }
+        setUserEmail(data.user?.email || email);
+        setSuccessMsg("Account verified! Realtime sync is active.");
+        safeHaptic.success();
+        setOtpCode("");
+        setAuthMode("signin");
+        onSyncComplete?.();
+      } catch (err: any) {
+        setFieldErrors({ password: err.message || "Invalid or expired confirmation code." });
+        safeHaptic.warning();
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const errors: {
       email?: string;
       password?: string;
@@ -238,18 +276,30 @@ export function CloudSyncModal({
     setLoading(true);
     try {
       if (authMode === "signup") {
+        const redirectUrl =
+          Platform.OS === "web"
+            ? (typeof window !== "undefined" ? window.location.origin : "http://localhost:8081")
+            : "pocket://auth-callback";
+
         const { data, error } = await supabase.auth.signUp({
           email: email.trim(),
           password: password.trim(),
+          options: {
+            emailRedirectTo: redirectUrl,
+          },
         });
         if (error) throw error;
         if (data.session) {
+          if (data.user?.id) {
+            await syncGuestTransactionsToAccount(data.user.id);
+          }
           setUserEmail(data.user?.email || email);
           setSuccessMsg("Account created! Realtime sync is active.");
           safeHaptic.success();
           onSyncComplete?.();
         } else {
-          setSuccessMsg("Check your email for the confirmation link!");
+          setSuccessMsg("Confirmation email sent! Tap the link in your email, or enter the confirmation code below.");
+          setAuthMode("verify_otp");
         }
       } else {
         const { data, error } = await supabase.auth.signInWithPassword({
@@ -310,6 +360,13 @@ export function CloudSyncModal({
     try {
       await supabase.auth.signOut();
       setUserEmail(null);
+      setEmail("");
+      setPassword("");
+      setConfirmPassword("");
+      setOtpCode("");
+      setFieldErrors({});
+      setErrorMsg(null);
+      setAuthMode("signin");
       setSuccessMsg("Signed out. Switched to private offline journal.");
       safeHaptic.success();
       onSignOut?.();
@@ -400,6 +457,10 @@ export function CloudSyncModal({
                       onPress={() => {
                         safeHaptic.selection();
                         setAuthMode("signin");
+                        setPassword("");
+                        setConfirmPassword("");
+                        setOtpCode("");
+                        setFieldErrors({});
                         setErrorMsg(null);
                         setSuccessMsg(null);
                       }}
@@ -413,6 +474,10 @@ export function CloudSyncModal({
                       onPress={() => {
                         safeHaptic.selection();
                         setAuthMode("signup");
+                        setPassword("");
+                        setConfirmPassword("");
+                        setOtpCode("");
+                        setFieldErrors({});
                         setErrorMsg(null);
                         setSuccessMsg(null);
                       }}
@@ -422,6 +487,13 @@ export function CloudSyncModal({
                         Create Account
                       </Text>
                     </Pressable>
+                  </View>
+                ) : authMode === "verify_otp" ? (
+                  <View style={styles.forgotHeaderRow}>
+                    <Text style={styles.forgotTitle}>Confirm Your Email</Text>
+                    <Text style={styles.forgotSubtitle}>
+                      Enter the confirmation code sent to {email || "your email"}, or click the link in your email.
+                    </Text>
                   </View>
                 ) : authMode === "new_password" ? (
                   <View style={styles.forgotHeaderRow}>
@@ -439,8 +511,8 @@ export function CloudSyncModal({
                   </View>
                 )}
 
-                {/* Email Input (Hidden in new_password mode) */}
-                {authMode !== "new_password" && (
+                {/* Email Input (Hidden in new_password and verify_otp mode) */}
+                {authMode !== "new_password" && authMode !== "verify_otp" && (
                   <View style={styles.inputGroup}>
                     <Text style={styles.inputLabel}>EMAIL ADDRESS</Text>
                     <View
@@ -478,8 +550,50 @@ export function CloudSyncModal({
                   </View>
                 )}
 
-                {/* Password Input (Hidden in forgot password mode) */}
-                {authMode !== "forgot" && (
+                {/* OTP Confirmation Code Input (Shown in verify_otp mode) */}
+                {authMode === "verify_otp" && (
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>CONFIRMATION CODE</Text>
+                    <View
+                      style={[
+                        styles.inputWrapper,
+                        Boolean(fieldErrors.password) && styles.inputWrapperError,
+                      ]}
+                    >
+                      <TextInput
+                        style={[
+                          styles.textInput,
+                          {
+                            letterSpacing: 4,
+                            textAlign: "center",
+                            fontSize: 18,
+                            fontFamily: FONTS.displayBold,
+                          },
+                        ]}
+                        placeholder="12345678"
+                        placeholderTextColor={COLORS.inkSoft}
+                        value={otpCode}
+                        onChangeText={(val) => {
+                          setOtpCode(val.trim());
+                          if (fieldErrors.password) {
+                            setFieldErrors((prev) => ({ ...prev, password: undefined }));
+                          }
+                        }}
+                        keyboardType="number-pad"
+                        maxLength={10}
+                      />
+                    </View>
+                    {Boolean(fieldErrors.password) && (
+                      <View style={styles.errorNoticeRow}>
+                        <CircleAlert size={13} color="#E53935" strokeWidth={2.2} />
+                        <Text style={styles.inputErrorText}>{fieldErrors.password}</Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+
+                {/* Password Input (Hidden in forgot password and verify_otp mode) */}
+                {authMode !== "forgot" && authMode !== "verify_otp" && (
                   <View style={styles.inputGroup}>
                     <View style={styles.inputLabelRow}>
                       <Text style={styles.inputLabel}>
@@ -614,14 +728,16 @@ export function CloudSyncModal({
                           ? "Send Reset Link"
                           : authMode === "new_password"
                           ? "Save New Password & Sign In"
+                          : authMode === "verify_otp"
+                          ? "Confirm Code & Sign In"
                           : "Sign In & Sync"}
                       </Text>
                     </>
                   )}
                 </Pressable>
 
-                {/* Back to Sign In button if in forgot or new_password mode */}
-                {(authMode === "forgot" || authMode === "new_password") && (
+                {/* Back to Sign In button if in forgot, new_password, or verify_otp mode */}
+                {(authMode === "forgot" || authMode === "new_password" || authMode === "verify_otp") && (
                   <Pressable
                     onPress={() => {
                       safeHaptic.selection();

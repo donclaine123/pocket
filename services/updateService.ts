@@ -1,4 +1,5 @@
 import * as Updates from "expo-updates";
+import Constants from "expo-constants";
 import { Platform } from "react-native";
 
 export interface UpdateCheckResult {
@@ -7,6 +8,11 @@ export interface UpdateCheckResult {
   version: string;
   error?: string;
 }
+
+import appJson from "../app.json";
+
+export const APP_VERSION: string =
+  (appJson as any)?.expo?.version ?? Constants.expoConfig?.version ?? "1.0.1";
 
 /**
  * Gets the current app runtime version and update state.
@@ -20,7 +26,7 @@ export function getAppVersionInfo(): {
 } {
   try {
     return {
-      version: Updates?.runtimeVersion ?? "1.0.0",
+      version: APP_VERSION,
       updateId: Updates?.updateId ?? null,
       channel: Updates?.channel ?? null,
       isEmbedded: Boolean(Updates?.isEmbeddedLaunch),
@@ -28,7 +34,7 @@ export function getAppVersionInfo(): {
     };
   } catch {
     return {
-      version: "1.0.0",
+      version: APP_VERSION,
       updateId: null,
       channel: null,
       isEmbedded: true,
@@ -42,7 +48,7 @@ export function getAppVersionInfo(): {
  * In development, Expo Go, or Web, safely reports that the app is on the latest code.
  */
 export async function checkForAppUpdate(): Promise<UpdateCheckResult> {
-  const version = Updates?.runtimeVersion ?? "1.0.0";
+  const version = APP_VERSION;
 
   try {
     if (!Updates?.isEnabled || Platform.OS === "web" || __DEV__) {

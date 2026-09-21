@@ -30,7 +30,7 @@ import {
 import { CURRENCIES, CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
 import { COLORS, FONTS } from "../constants/theme";
 import { safeHaptic } from "../services/haptics";
-import { checkForAppUpdate } from "../services/updateService";
+import { checkForAppUpdate, APP_VERSION } from "../services/updateService";
 import { UpdateModal } from "./UpdateModal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -53,7 +53,7 @@ export function SettingsModal({
 }: SettingsModalProps) {
   const insets = useSafeAreaInsets();
   const { height: windowHeight } = useWindowDimensions();
-  const currentVersion = Constants.expoConfig?.version ?? "1.0.0";
+  const currentVersion = APP_VERSION;
   const modalCardHeight = Math.min(Math.round(windowHeight * 0.75), 580);
 
   // Sub-view: Currency picker

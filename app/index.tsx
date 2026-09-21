@@ -61,7 +61,7 @@ import { CloudSyncModal } from "../components/CloudSyncModal";
 import { UpdateModal } from "../components/UpdateModal";
 import { supabase } from "../database/supabase";
 import { FlashList } from "@shopify/flash-list";
-import { checkForAppUpdate } from "../services/updateService";
+import { checkForAppUpdate, APP_VERSION } from "../services/updateService";
 import {
   MonthArchive,
   TimeframeMode,
@@ -230,7 +230,7 @@ export default function HomeScreen() {
 
   // In-App OTA Auto-Update State (Zero Data Loss)
   const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const currentVersion = Constants.expoConfig?.version ?? "1.0.0";
+  const currentVersion = APP_VERSION;
 
   // Me Tab Sub-Page Navigation State
   const [meSubPage, setMeSubPage] = useState<"main" | "updates" | "about" | "currency">("main");

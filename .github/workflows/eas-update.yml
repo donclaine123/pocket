@@ -16,17 +16,16 @@ jobs:
       - name: 🟢 Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 'lts/*'
           cache: 'npm'
-
-      - name: 📦 Setup Expo and EAS
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
 
       - name: 📥 Install dependencies
         run: npm ci
 
+      - name: 📦 Install EAS CLI
+        run: npm install -g eas-cli
+
       - name: 🚀 Publish update to preview branch
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: eas update --branch preview --auto --non-interactive

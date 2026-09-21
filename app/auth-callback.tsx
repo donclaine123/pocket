@@ -18,7 +18,10 @@ export default function AuthCallbackScreen() {
     async function handleCallback() {
       try {
         const initialUrl = await Linking.getInitialURL();
-        const currentUrl = typeof window !== "undefined" ? window.location.href : "";
+        const currentUrl =
+          typeof window !== "undefined" && window.location
+            ? window.location.href
+            : "";
         const targetUrl = initialUrl || currentUrl || "";
 
         const { accessToken, refreshToken, code, tokenHash, type, errorDescription } =

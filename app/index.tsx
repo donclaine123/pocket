@@ -2910,9 +2910,9 @@ export default function HomeScreen() {
           renderItem={renderFeedItem}
           keyExtractor={(item) => item.id}
           getItemType={(item) => item.type}
+          estimatedItemSize={100}
           alwaysBounceVertical={true}
           showsVerticalScrollIndicator={false}
-          style={{ flex: 1, width: "100%" }}
           contentContainerStyle={{
             ...styles.scrollContent,
             paddingHorizontal: horizontalPad,

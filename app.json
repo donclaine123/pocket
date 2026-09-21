@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pocket",
     "slug": "pocket-penny-journal",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./public/icons/icon-512.png",
     "scheme": "pocket",
@@ -15,9 +15,11 @@
     },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.pocket.pennyjournal"
+      "bundleIdentifier": "com.pocket.pennyjournal",
+      "buildNumber": "2"
     },
     "android": {
+      "versionCode": 2,
       "adaptiveIcon": {
         "foregroundImage": "./public/icons/icon-512.png",
         "backgroundColor": "#F7F0E3"

@@ -2932,10 +2932,7 @@ export default function HomeScreen() {
       {/* Floating Add Entry Button & Cozy Bottom Tab Bar */}
       <View
         pointerEvents="box-none"
-        style={[
-          styles.bottomBarWrapper,
-          { paddingBottom: Math.max(insets.bottom, 6) },
-        ]}
+        style={styles.bottomBarWrapper}
       >
         {/* Floating Add Entry Pill */}
         <View style={{ position: "relative", marginBottom: -18, zIndex: 35 }}>
@@ -2970,7 +2967,12 @@ export default function HomeScreen() {
         </View>
 
         {/* Tab Navigation Footer */}
-        <View style={styles.bottomTabBar}>
+        <View
+          style={[
+            styles.bottomTabBar,
+            { paddingBottom: Math.max(insets.bottom, 6) },
+          ]}
+        >
           {/* Tab: Journal */}
           <Pressable
             onPress={() => {

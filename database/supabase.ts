@@ -83,47 +83,14 @@ const ExpoSecureStoreAdapter = {
   },
 };
 
-import Constants from "expo-constants";
-
-const extra = (Constants?.expoConfig?.extra as Record<string, any>) || {};
-
-const rawUrl =
-  process.env.EXPO_PUBLIC_SUPABASE_URL ||
-  (process.env as any).SUPABASE_URL ||
-  extra.EXPO_PUBLIC_SUPABASE_URL ||
-  extra.supabaseUrl ||
-  extra.SUPABASE_URL ||
-  "";
-
-const rawKey =
-  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  (process.env as any).SUPABASE_ANON_KEY ||
-  extra.EXPO_PUBLIC_SUPABASE_ANON_KEY ||
-  extra.supabaseAnonKey ||
-  extra.SUPABASE_ANON_KEY ||
-  "";
-
-const supabaseUrl = rawUrl || "https://placeholder-project.supabase.co";
-const supabaseAnonKey = rawKey || "placeholder-anon-key";
+const supabaseUrl = process.env.EXPO_PUBLIC_SUPABASE_URL || "https://placeholder-project.supabase.co";
+const supabaseAnonKey = process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "placeholder-anon-key";
 
 export const isSupabaseConfigured = Boolean(
-  rawUrl &&
-  rawKey &&
-  !rawUrl.includes("placeholder-project")
+  process.env.EXPO_PUBLIC_SUPABASE_URL &&
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY &&
+  !process.env.EXPO_PUBLIC_SUPABASE_URL.includes("placeholder-project")
 );
-
-export function getSupabaseDebugInfo() {
-  return {
-    isConfigured: isSupabaseConfigured,
-    platform: Platform.OS,
-    url: rawUrl ? (rawUrl.slice(0, 24) + "...") : "(not set)",
-    hasKey: Boolean(rawKey),
-    keyLength: rawKey ? rawKey.length : 0,
-    hasProcessEnvUrl: Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL),
-    hasProcessEnvKey: Boolean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY),
-    extraKeys: Object.keys(extra),
-  };
-}
 
 export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
   auth: {

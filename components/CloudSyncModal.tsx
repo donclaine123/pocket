@@ -13,7 +13,7 @@ import {
   View,
 } from "react-native";
 import { COLORS, FONTS, STYLES } from "../constants/theme";
-import { isSupabaseConfigured, supabase, getSupabaseDebugInfo } from "../database/supabase";
+import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { safeHaptic } from "../services/haptics";
 import { syncGuestTransactionsToAccount } from "../services/storage";
 
@@ -83,9 +83,8 @@ export function CloudSyncModal({
     setFieldErrors({});
 
     if (!isSupabaseConfigured) {
-      const dbg = getSupabaseDebugInfo();
       setErrorMsg(
-        `Supabase credentials not found in environment.\n\nDiagnostics:\n• Platform: ${dbg.platform}\n• EXPO_PUBLIC_SUPABASE_URL: ${dbg.hasProcessEnvUrl ? "Found" : "Missing"}\n• EXPO_PUBLIC_SUPABASE_ANON_KEY: ${dbg.hasProcessEnvKey ? "Found" : "Missing"}\n• Active URL: ${dbg.url}\n• Key Length: ${dbg.keyLength}\n• Extra Keys: [${dbg.extraKeys.join(", ") || "none"}]`
+        "Supabase credentials not found in .env. Copy .env.example to set up your cloud database."
       );
       return;
     }
@@ -758,29 +757,6 @@ export function CloudSyncModal({
                   ✿ No account required: Pocket works completely offline on your device. Creating an account is only needed if you'd like to back up your journal and view it on other phones or computers.
                 </Text>
 
-                {/* Direct UI Environment Debug Card */}
-                <View style={styles.debugContainer}>
-                  <Text style={styles.debugTitle}>🛠 Environment Diagnostics</Text>
-                  <Text style={styles.debugItem}>
-                    Configured: {isSupabaseConfigured ? "✅ YES" : "❌ NO"}
-                  </Text>
-                  <Text style={styles.debugItem}>
-                    Platform: {Platform.OS}
-                  </Text>
-                  <Text style={styles.debugItem}>
-                    process.env.EXPO_PUBLIC_SUPABASE_URL: {Boolean(process.env.EXPO_PUBLIC_SUPABASE_URL) ? "Found" : "Missing"}
-                  </Text>
-                  <Text style={styles.debugItem}>
-                    process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY: {Boolean(process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY) ? "Found" : "Missing"}
-                  </Text>
-                  <Text style={styles.debugItem}>
-                    URL: {getSupabaseDebugInfo().url} (Key length: {getSupabaseDebugInfo().keyLength})
-                  </Text>
-                  <Text style={styles.debugItem}>
-                    Constants Extra: [{getSupabaseDebugInfo().extraKeys.join(", ") || "none"}]
-                  </Text>
-                </View>
-
               </View>
             )}
           </ScrollView>
@@ -1101,24 +1077,5 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
-  debugContainer: {
-    marginTop: 14,
-    padding: 10,
-    backgroundColor: "rgba(0,0,0,0.04)",
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.08)",
-  },
-  debugTitle: {
-    fontFamily: FONTS.bodyBold,
-    fontSize: 11,
-    color: COLORS.ink,
-    marginBottom: 4,
-  },
-  debugItem: {
-    fontFamily: FONTS.body,
-    fontSize: 10,
-    color: COLORS.inkSoft,
-    lineHeight: 14,
-  },
+
 });

@@ -3,8 +3,10 @@ import { Appearance } from "react-native";
 import {
   FlexWidget,
   TextWidget,
+  ImageWidget,
 } from "react-native-android-widget";
 import { DEFAULT_CURRENCY } from "../constants/currencies";
+import { POCKET_LOGO_BASE64 } from "./logoAsset";
 
 /**
  * Tactile Cozy Brutalist Palette - Supports dynamic Light & Dark themes
@@ -255,14 +257,10 @@ export function QuickAdd1x1Widget(props: Partial<WidgetDataProps>) {
                 justifyContent: "center",
               }}
             >
-              <TextWidget
-                text="+"
-                style={{
-                  fontSize: 24,
-                  fontWeight: "bold",
-                  color: "#29221F",
-                  textAlign: "center",
-                }}
+              <ImageWidget
+                image={POCKET_LOGO_BASE64}
+                imageWidth={28}
+                imageHeight={28}
               />
             </FlexWidget>
           </FlexWidget>
@@ -349,13 +347,10 @@ export function Balance2x1Widget(props: Partial<WidgetDataProps>) {
                   marginRight: 6,
                 }}
               >
-                <TextWidget
-                  text={currencySymbol}
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "bold",
-                    color: theme.coral,
-                  }}
+                <ImageWidget
+                  image={POCKET_LOGO_BASE64}
+                  imageWidth={16}
+                  imageHeight={16}
                 />
               </FlexWidget>
               <TextWidget
@@ -501,13 +496,10 @@ export function Banner4x1Widget(props: Partial<WidgetDataProps>) {
                 marginRight: 8,
               }}
             >
-              <TextWidget
-                text={currencySymbol}
-                style={{
-                  fontSize: 11,
-                  fontWeight: "bold",
-                  color: theme.coral,
-                }}
+              <ImageWidget
+                image={POCKET_LOGO_BASE64}
+                imageWidth={22}
+                imageHeight={22}
               />
             </FlexWidget>
 
@@ -664,6 +656,12 @@ export function Glance2x2Widget(props: Partial<WidgetDataProps>) {
             clickAction="OPEN_APP"
           >
             <FlexWidget style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
+              <ImageWidget
+                image={POCKET_LOGO_BASE64}
+                imageWidth={16}
+                imageHeight={16}
+                style={{ marginRight: 5 }}
+              />
               <TextWidget
                 text="pocket journal "
                 style={{
@@ -926,6 +924,12 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
           >
             <FlexWidget style={{ width: "match_parent", flexDirection: "column" }}>
               <FlexWidget style={{ width: "match_parent", flexDirection: "row", alignItems: "center" }}>
+                <ImageWidget
+                  image={POCKET_LOGO_BASE64}
+                  imageWidth={16}
+                  imageHeight={16}
+                  style={{ marginRight: 5 }}
+                />
                 <TextWidget
                   text="pocket journal "
                   style={{
@@ -1265,6 +1269,12 @@ export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
           >
             <FlexWidget style={{ flex: 1, flexDirection: "column" }}>
               <FlexWidget style={{ flexDirection: "row", alignItems: "center" }}>
+                <ImageWidget
+                  image={POCKET_LOGO_BASE64}
+                  imageWidth={20}
+                  imageHeight={20}
+                  style={{ marginRight: 6 }}
+                />
                 <TextWidget
                   text="Pocket Penny Journal "
                   style={{

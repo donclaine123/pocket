@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pocket",
     "slug": "pocket-penny-journal",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "orientation": "portrait",
     "icon": "./public/icons/icon-512.png",
     "scheme": "pocket",
@@ -16,15 +16,18 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.pocket.pennyjournal",
-      "buildNumber": "2"
+      "buildNumber": "3"
     },
     "android": {
-      "versionCode": 2,
+      "versionCode": 3,
       "adaptiveIcon": {
         "foregroundImage": "./public/icons/icon-512.png",
         "backgroundColor": "#F7F0E3"
       },
-      "package": "com.pocket.pennyjournal"
+      "package": "com.pocket.pennyjournal",
+      "permissions": [
+        "android.permission.REQUEST_INSTALL_PACKAGES"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -39,7 +42,41 @@
       "policy": "appVersion"
     },
     "plugins": [
-      "expo-router"
+      "expo-router",
+      [
+        "react-native-android-widget",
+        {
+          "widgets": [
+            {
+              "name": "QuickAdd1x1",
+              "label": "Pocket Quick Entry (1x1)",
+              "minWidth": "60dp",
+              "minHeight": "60dp",
+              "targetCellWidth": 1,
+              "targetCellHeight": 1,
+              "description": "Quick 1-tap entry into Pocket"
+            },
+            {
+              "name": "Balance2x1",
+              "label": "Pocket Balance (2x1)",
+              "minWidth": "120dp",
+              "minHeight": "60dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 1,
+              "description": "Today's spend & total balance"
+            },
+            {
+              "name": "Glance2x2",
+              "label": "Pocket Journal (2x2)",
+              "minWidth": "140dp",
+              "minHeight": "140dp",
+              "targetCellWidth": 2,
+              "targetCellHeight": 2,
+              "description": "Today's spend, recent entries, and quick log buttons"
+            }
+          ]
+        }
+      ]
     ],
     "extra": {
       "router": {

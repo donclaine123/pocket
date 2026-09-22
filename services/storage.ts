@@ -3,6 +3,7 @@ import { getPowerSyncDb, initPowerSync } from "../database/powersync";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { SEED_DATA, Txn } from "../types/transaction";
 import { CurrencyOption, CURRENCIES, DEFAULT_CURRENCY } from "../constants/currencies";
+import { updateAllWidgetsFromTxns } from "./widgetSync";
 
 const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
 const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
@@ -305,6 +306,9 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
       }));
       await supabase.from("transactions").upsert(rows, { onConflict: "id" });
     }
+
+    // 4. Keep home screen widgets updated in real time
+    updateAllWidgetsFromTxns(txns);
   } catch (error) {
     console.error("[Storage] Error saving transactions:", error);
   }
@@ -322,13 +326,14 @@ export async function deleteTransaction(id: string): Promise<void> {
     const key = getStorageKey(userId);
 
     // 1. Remove from local AsyncStorage cache & mirror to guest storage
+    let remainingTxns: Txn[] = [];
     const raw = await AsyncStorage.getItem(key);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) {
-        const filtered = parsed.filter((t: any) => t.id !== id);
-        await AsyncStorage.setItem(key, JSON.stringify(filtered));
-        await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(filtered));
+        remainingTxns = parsed.filter((t: any) => t.id !== id);
+        await AsyncStorage.setItem(key, JSON.stringify(remainingTxns));
+        await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(remainingTxns));
       }
     }
 
@@ -349,6 +354,9 @@ export async function deleteTransaction(id: string): Promise<void> {
         console.error("[Storage] Supabase delete error:", error);
       }
     }
+
+    // 4. Update home screen widgets
+    updateAllWidgetsFromTxns(remainingTxns);
   } catch (error) {
     console.error("[Storage] Error deleting transaction:", error);
   }

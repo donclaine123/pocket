@@ -4,6 +4,7 @@ import {
   Modal,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   View,
@@ -11,40 +12,79 @@ import {
 import {
   ArrowDownToLine,
   Check,
+  Download,
   PackageCheck,
-  RefreshCw,
   ShieldCheck,
   Sparkles,
   X,
 } from "lucide-react-native";
 import { COLORS, FONTS, STYLES } from "../constants/theme";
 import { safeHaptic } from "../services/haptics";
-import { applyUpdateAndRestart, downloadAppUpdate } from "../services/updateService";
+import {
+  applyUpdateAndRestart,
+  downloadApkWithProgress,
+  downloadAppUpdate,
+  installDownloadedApk,
+} from "../services/updateService";
 
 interface UpdateModalProps {
   visible: boolean;
   onClose: () => void;
   newVersion?: string;
+  updateType?: "apk" | "ota" | "none";
+  apkDownloadUrl?: string;
+  releaseNotes?: string;
 }
 
-export function UpdateModal({ visible, onClose, newVersion = "latest" }: UpdateModalProps) {
+export function UpdateModal({
+  visible,
+  onClose,
+  newVersion = "latest",
+  updateType = "ota",
+  apkDownloadUrl,
+  releaseNotes,
+}: UpdateModalProps) {
   const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState(0);
   const [readyToRestart, setReadyToRestart] = useState(false);
+  const [downloadedApkUri, setDownloadedApkUri] = useState<string | null>(null);
 
   const handleStartUpdate = async () => {
     safeHaptic.selection();
     setDownloading(true);
+    setProgress(0);
 
-    // Download update bundle in background
-    const downloaded = await downloadAppUpdate();
-    setDownloading(false);
+    if (updateType === "apk" && apkDownloadUrl) {
+      // 1. In-App APK Download & Install
+      const fileUri = await downloadApkWithProgress(apkDownloadUrl, (ratio) => {
+        setProgress(ratio);
+      });
+      setDownloading(false);
 
-    if (downloaded) {
-      setReadyToRestart(true);
-      safeHaptic.success();
+      if (fileUri) {
+        setDownloadedApkUri(fileUri);
+        safeHaptic.success();
+        // Immediately trigger package installer
+        await installDownloadedApk(fileUri);
+      }
     } else {
-      // If simulated or already fetched, proceed to reload
-      setReadyToRestart(true);
+      // 2. Over-The-Air JavaScript Update
+      const downloaded = await downloadAppUpdate();
+      setDownloading(false);
+
+      if (downloaded) {
+        setReadyToRestart(true);
+        safeHaptic.success();
+      } else {
+        setReadyToRestart(true);
+      }
+    }
+  };
+
+  const handleInstallApkAgain = async () => {
+    if (downloadedApkUri) {
+      safeHaptic.selection();
+      await installDownloadedApk(downloadedApkUri);
     }
   };
 
@@ -53,6 +93,8 @@ export function UpdateModal({ visible, onClose, newVersion = "latest" }: UpdateM
     await applyUpdateAndRestart();
     onClose();
   };
+
+  const isApk = updateType === "apk";
 
   return (
     <Modal
@@ -70,7 +112,9 @@ export function UpdateModal({ visible, onClose, newVersion = "latest" }: UpdateM
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.title}>Update Available! ✿</Text>
-              <Text style={styles.versionSubtitle}>Pocket Penny Journal</Text>
+              <Text style={styles.versionSubtitle}>
+                Pocket Penny Journal · v{newVersion}
+              </Text>
             </View>
             <Pressable
               hitSlop={8}
@@ -84,6 +128,16 @@ export function UpdateModal({ visible, onClose, newVersion = "latest" }: UpdateM
             </Pressable>
           </View>
 
+          {/* Release Notes excerpt if available */}
+          {Boolean(releaseNotes) && (
+            <View style={styles.notesContainer}>
+              <Text style={styles.notesTitle}>What's New in v{newVersion}:</Text>
+              <ScrollView style={styles.notesScroll} nestedScrollEnabled>
+                <Text style={styles.notesText}>{releaseNotes}</Text>
+              </ScrollView>
+            </View>
+          )}
+
           {/* Zero Data Loss Guarantee Banner */}
           <View style={styles.safetyCard}>
             <View style={styles.safetyHeader}>
@@ -91,13 +145,23 @@ export function UpdateModal({ visible, onClose, newVersion = "latest" }: UpdateM
               <Text style={styles.safetyTitle}>Zero Data Loss Guarantee</Text>
             </View>
             <Text style={styles.safetyText}>
-              This update applies directly in-place without uninstalling the app. All your guest mode transactions and balance stay 100% safe on your device.
+              {isApk
+                ? "This updates your app directly in-place. All your guest transactions, SQLite journal, and settings remain 100% safe."
+                : "This update applies directly in-place without uninstalling the app. All your guest transactions and balance stay 100% safe."}
             </Text>
           </View>
 
           {/* Action Area */}
           <View style={styles.actions}>
-            {readyToRestart ? (
+            {isApk && downloadedApkUri ? (
+              <Pressable
+                onPress={handleInstallApkAgain}
+                style={[styles.primaryBtn, { backgroundColor: COLORS.mint }]}
+              >
+                <PackageCheck size={18} color={COLORS.ink} strokeWidth={2.2} />
+                <Text style={styles.primaryBtnText}>Launch Installer to Finish</Text>
+              </Pressable>
+            ) : !isApk && readyToRestart ? (
               <Pressable
                 onPress={handleRestart}
                 style={[styles.primaryBtn, { backgroundColor: COLORS.mint }]}
@@ -107,17 +171,37 @@ export function UpdateModal({ visible, onClose, newVersion = "latest" }: UpdateM
               </Pressable>
             ) : downloading ? (
               <View style={styles.downloadingContainer}>
-                <ActivityIndicator size="small" color={COLORS.ink} />
-                <Text style={styles.downloadingText}>Downloading update in background...</Text>
+                <View style={styles.progressRow}>
+                  <ActivityIndicator size="small" color={COLORS.ink} />
+                  <Text style={styles.downloadingText}>
+                    {isApk
+                      ? `Downloading APK (${Math.round(progress * 100)}%)...`
+                      : "Downloading update in background..."}
+                  </Text>
+                </View>
+                {isApk && (
+                  <View style={styles.progressBarTrack}>
+                    <View
+                      style={[
+                        styles.progressBarFill,
+                        { width: `${Math.round(progress * 100)}%` },
+                      ]}
+                    />
+                  </View>
+                )}
               </View>
             ) : (
               <Pressable
                 onPress={handleStartUpdate}
                 style={styles.primaryBtn}
               >
-                <ArrowDownToLine size={18} color={COLORS.cream} strokeWidth={2.2} />
+                {isApk ? (
+                  <Download size={18} color={COLORS.cream} strokeWidth={2.2} />
+                ) : (
+                  <ArrowDownToLine size={18} color={COLORS.cream} strokeWidth={2.2} />
+                )}
                 <Text style={[styles.primaryBtnText, { color: COLORS.cream }]}>
-                  Update & Reload Now
+                  {isApk ? "Download & Install APK" : "Update & Reload Now"}
                 </Text>
               </Pressable>
             )}
@@ -198,19 +282,42 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: COLORS.inkMuted,
   },
+  notesContainer: {
+    backgroundColor: COLORS.paper,
+    borderRadius: 12,
+    padding: 10,
+    borderWidth: 1.5,
+    borderColor: COLORS.cardBorder,
+    marginBottom: 12,
+  },
+  notesTitle: {
+    fontFamily: FONTS.bodyBold,
+    fontSize: 12,
+    color: COLORS.ink,
+    marginBottom: 4,
+  },
+  notesScroll: {
+    maxHeight: 90,
+  },
+  notesText: {
+    fontFamily: FONTS.body,
+    fontSize: 11,
+    lineHeight: 16,
+    color: COLORS.inkSoft,
+  },
   safetyCard: {
     backgroundColor: "#E8F7F0",
     borderRadius: 14,
-    padding: 14,
+    padding: 12,
     borderWidth: 1.5,
     borderColor: "#A3DEC1",
-    marginBottom: 20,
+    marginBottom: 16,
   },
   safetyHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 6,
+    marginBottom: 4,
   },
   safetyTitle: {
     fontFamily: FONTS.bodyBold,
@@ -248,16 +355,31 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
   },
   downloadingContainer: {
+    paddingVertical: 8,
+    gap: 8,
+  },
+  progressRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 10,
-    paddingVertical: 14,
   },
   downloadingText: {
     fontFamily: FONTS.bodyMedium,
     fontSize: 13,
     color: COLORS.ink,
+  },
+  progressBarTrack: {
+    width: "100%",
+    height: 8,
+    backgroundColor: COLORS.cardBorder,
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: "100%",
+    backgroundColor: COLORS.mint,
+    borderRadius: 4,
   },
   laterBtn: {
     alignItems: "center",
@@ -270,3 +392,4 @@ const styles = StyleSheet.create({
     textDecorationLine: "underline",
   },
 });
+

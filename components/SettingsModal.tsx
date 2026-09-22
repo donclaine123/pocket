@@ -30,7 +30,7 @@ import {
 import { CURRENCIES, CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
 import { COLORS, FONTS } from "../constants/theme";
 import { safeHaptic } from "../services/haptics";
-import { checkForAppUpdate, APP_VERSION } from "../services/updateService";
+import { checkForAppUpdate, APP_VERSION, UpdateCheckResult } from "../services/updateService";
 import { UpdateModal } from "./UpdateModal";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -67,7 +67,7 @@ export function SettingsModal({
     message: string;
   } | null>(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
-
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
 
   const filteredCurrencies = useMemo(() => {
     const q = currencySearch.trim().toLowerCase();
@@ -88,6 +88,7 @@ export function SettingsModal({
     try {
       const res = await checkForAppUpdate();
       setCheckingUpdate(false);
+      setUpdateInfo(res);
 
       if (res.isAvailable) {
         setShowUpdateModal(true);
@@ -560,7 +561,10 @@ export function SettingsModal({
           <UpdateModal
             visible={showUpdateModal}
             onClose={() => setShowUpdateModal(false)}
-            newVersion={currentVersion}
+            newVersion={updateInfo?.version || currentVersion}
+            updateType={updateInfo?.updateType || "ota"}
+            apkDownloadUrl={updateInfo?.apkDownloadUrl}
+            releaseNotes={updateInfo?.releaseNotes}
           />
         </View>
       </View>

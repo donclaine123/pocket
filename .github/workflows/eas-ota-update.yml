@@ -37,7 +37,36 @@ jobs:
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
-          eas env:pull preview --path .env --non-interactive || eas env:pull production --path .env --non-interactive || true
+          eas env:pull production --path .env.prod --non-interactive || true
+          eas env:pull preview --path .env.prev --non-interactive || true
+          eas env:pull development --path .env.dev --non-interactive || true
+          cat .env.prod .env.prev .env.dev > .env 2>/dev/null || true
+          node -e "
+            const fs = require('fs');
+            if (fs.existsSync('.env')) {
+              const content = fs.readFileSync('.env', 'utf8');
+              const lines = content.split('\n');
+              const extraLines = [];
+              const foundKeys = [];
+              for (const line of lines) {
+                const match = line.trim().match(/^([A-Za-z0-9_]+)=(.*)$/);
+                if (match) {
+                  const key = match[1];
+                  const val = match[2];
+                  foundKeys.push(key);
+                  if (!key.startsWith('EXPO_PUBLIC_')) {
+                    extraLines.push('EXPO_PUBLIC_' + key + '=' + val);
+                  }
+                }
+              }
+              if (extraLines.length) {
+                fs.appendFileSync('.env', '\n' + extraLines.join('\n') + '\n');
+              }
+              console.log('Detected environment variable keys:', foundKeys);
+            } else {
+              console.log('No .env file created from EAS env:pull');
+            }
+          "
 
       - name: 🚀 Publish EAS OTA Update to Preview & Production Channels
         env:

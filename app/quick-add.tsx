@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   BackHandler,
   KeyboardAvoidingView,
@@ -10,7 +10,7 @@ import {
   TextInput,
   View,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Check, Sparkles, X } from "lucide-react-native";
 import { COLORS, FONTS, STYLES } from "../constants/theme";
 import { safeHaptic } from "../services/haptics";
@@ -21,15 +21,54 @@ import {
   Txn,
   TxnType,
 } from "../types/transaction";
-import { loadTransactions, saveTransactions } from "../services/storage";
-import { toISODate } from "../services/dateUtils";
+import { CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
+import {
+  loadSavedCurrency,
+  loadTransactions,
+  saveTransactions,
+} from "../services/storage";
 
 export default function QuickAddScreen() {
+  const { fromWidget } = useLocalSearchParams<{ fromWidget?: string }>();
   const [type, setType] = useState<TxnType>("expense");
   const [amountStr, setAmountStr] = useState("");
   const [category, setCategory] = useState<CategoryKey>("food_beverage");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
+  const [currency, setCurrency] = useState<CurrencyOption>(DEFAULT_CURRENCY);
+
+  // Load user's preferred currency on mount
+  useEffect(() => {
+    loadSavedCurrency().then((curr) => {
+      if (curr) setCurrency(curr);
+    });
+  }, []);
+
+  // Exit handler: closes directly to Android home screen without entering the main app
+  const handleExit = () => {
+    safeHaptic.light();
+    if (Platform.OS === "android") {
+      BackHandler.exitApp();
+    } else {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/");
+      }
+    }
+  };
+
+  // Intercept Android hardware back button so it exits to home screen rather than opening main app
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      const onBackPress = () => {
+        handleExit();
+        return true;
+      };
+      const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+      return () => sub.remove();
+    }
+  }, []);
 
   const categories = type === "expense" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
 
@@ -38,15 +77,6 @@ export default function QuickAddScreen() {
     const current = parseFloat(amountStr) || 0;
     const next = current + addVal;
     setAmountStr(next.toString());
-  };
-
-  const handleClose = () => {
-    safeHaptic.light();
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/");
-    }
   };
 
   const handleSave = async () => {
@@ -73,11 +103,11 @@ export default function QuickAddScreen() {
       await saveTransactions([newTxn, ...existing]);
       safeHaptic.success();
 
-      // If opened standalone from home screen widget, exit app back to home screen
-      if (Platform.OS === "android" && !router.canGoBack()) {
+      // Exit directly to Android home screen without navigating into the app
+      if (Platform.OS === "android") {
         BackHandler.exitApp();
       } else {
-        handleClose();
+        handleExit();
       }
     } catch (err) {
       console.error("[QuickAdd] Error saving:", err);
@@ -90,7 +120,7 @@ export default function QuickAddScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
       style={styles.container}
     >
-      <Pressable style={styles.backdrop} onPress={handleClose} />
+      <Pressable style={styles.backdrop} onPress={handleExit} />
 
       <View style={[styles.card, STYLES.card]}>
         {/* Header */}
@@ -102,7 +132,7 @@ export default function QuickAddScreen() {
             <Text style={styles.title}>Quick Entry ✿</Text>
             <Text style={styles.subtitle}>Pocket Widget Fast Add</Text>
           </View>
-          <Pressable hitSlop={8} onPress={handleClose} style={styles.closeBtn}>
+          <Pressable hitSlop={8} onPress={handleExit} style={styles.closeBtn}>
             <X size={16} color={COLORS.ink} />
           </Pressable>
         </View>
@@ -152,9 +182,9 @@ export default function QuickAddScreen() {
           </Pressable>
         </View>
 
-        {/* Amount Input */}
+        {/* Amount Input with user's preferred currency symbol */}
         <View style={styles.amountBox}>
-          <Text style={styles.currencyPrefix}>$</Text>
+          <Text style={styles.currencyPrefix}>{currency.symbol}</Text>
           <TextInput
             style={styles.amountInput}
             value={amountStr}
@@ -166,7 +196,7 @@ export default function QuickAddScreen() {
           />
         </View>
 
-        {/* Quick Amount Steppers */}
+        {/* Quick Amount Steppers with user's currency */}
         <View style={styles.presetRow}>
           {[5, 10, 20, 50].map((val) => (
             <Pressable
@@ -174,7 +204,9 @@ export default function QuickAddScreen() {
               onPress={() => handleAddPresetAmount(val)}
               style={styles.presetChip}
             >
-              <Text style={styles.presetChipText}>+${val}</Text>
+              <Text style={styles.presetChipText}>
+                +{currency.symbol}{val}
+              </Text>
             </Pressable>
           ))}
         </View>

@@ -422,6 +422,9 @@ export async function loadSavedCurrency(): Promise<CurrencyOption> {
 export async function saveSavedCurrency(currency: CurrencyOption): Promise<void> {
   try {
     await AsyncStorage.setItem(CURRENCY_STORAGE_KEY, JSON.stringify(currency));
+    // Immediately refresh all widgets with the new currency symbol
+    const txns = await loadTransactions();
+    await updateAllWidgetsFromTxns(txns, currency.symbol);
   } catch (err) {
     console.warn("[Storage] Error saving currency preference:", err);
   }

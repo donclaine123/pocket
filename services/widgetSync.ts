@@ -4,6 +4,9 @@ import { requestWidgetUpdate } from "react-native-android-widget";
 import React from "react";
 import {
   Balance2x1Widget,
+  Banner4x1Widget,
+  Dashboard4x2Widget,
+  FullJournal4x4Widget,
   Glance2x2Widget,
   QuickAdd1x1Widget,
   WidgetDataProps,
@@ -19,17 +22,28 @@ const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
  * Loads current widget summary data from AsyncStorage.
  */
 export async function getStoredWidgetData(): Promise<WidgetDataProps> {
+  let currencySymbol = "$";
+  try {
+    const rawCurr = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
+    if (rawCurr) {
+      const parsedCurr = JSON.parse(rawCurr);
+      if (parsedCurr?.symbol) currencySymbol = parsedCurr.symbol;
+    }
+  } catch {}
+
   try {
     const raw = await AsyncStorage.getItem(WIDGET_DATA_STORAGE_KEY);
     if (raw) {
-      return JSON.parse(raw);
+      const data = JSON.parse(raw);
+      data.currencySymbol = currencySymbol;
+      return data;
     }
   } catch (err) {
     console.warn("[WidgetSync] Could not read cached widget data:", err);
   }
 
   return {
-    currencySymbol: "$",
+    currencySymbol,
     totalBalance: 0,
     todaySpent: 0,
     recentTxns: [],
@@ -106,8 +120,20 @@ export async function updateAllWidgetsFromTxns(
         renderWidget: () => React.createElement(Balance2x1Widget, widgetData),
       }),
       requestWidgetUpdate({
+        widgetName: "Banner4x1",
+        renderWidget: () => React.createElement(Banner4x1Widget, widgetData),
+      }),
+      requestWidgetUpdate({
         widgetName: "Glance2x2",
         renderWidget: () => React.createElement(Glance2x2Widget, widgetData),
+      }),
+      requestWidgetUpdate({
+        widgetName: "Dashboard4x2",
+        renderWidget: () => React.createElement(Dashboard4x2Widget, widgetData),
+      }),
+      requestWidgetUpdate({
+        widgetName: "FullJournal4x4",
+        renderWidget: () => React.createElement(FullJournal4x4Widget, widgetData),
       }),
     ]);
   } catch (error) {

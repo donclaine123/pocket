@@ -2,7 +2,7 @@
   "expo": {
     "name": "Pocket",
     "slug": "pocket-penny-journal",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./public/icons/icon-512.png",
     "scheme": "pocket",
@@ -16,10 +16,10 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.pocket.pennyjournal",
-      "buildNumber": "3"
+      "buildNumber": "4"
     },
     "android": {
-      "versionCode": 3,
+      "versionCode": 4,
       "adaptiveIcon": {
         "foregroundImage": "./public/icons/icon-512.png",
         "backgroundColor": "#F7F0E3"
@@ -54,6 +54,7 @@
               "minHeight": "60dp",
               "targetCellWidth": 1,
               "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical",
               "description": "Quick 1-tap entry into Pocket"
             },
             {
@@ -63,7 +64,18 @@
               "minHeight": "60dp",
               "targetCellWidth": 2,
               "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical",
               "description": "Today's spend & total balance"
+            },
+            {
+              "name": "Banner4x1",
+              "label": "Pocket Banner Bar (4x1)",
+              "minWidth": "250dp",
+              "minHeight": "60dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 1,
+              "resizeMode": "horizontal|vertical",
+              "description": "Wide horizontal bar with balance, today's spend, and quick add"
             },
             {
               "name": "Glance2x2",
@@ -72,7 +84,28 @@
               "minHeight": "140dp",
               "targetCellWidth": 2,
               "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
               "description": "Today's spend, recent entries, and quick log buttons"
+            },
+            {
+              "name": "Dashboard4x2",
+              "label": "Pocket Dashboard (4x2)",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "resizeMode": "horizontal|vertical",
+              "description": "Full dashboard with balance, today's spend, recent feed, and 1-tap quick buttons"
+            },
+            {
+              "name": "FullJournal4x4",
+              "label": "Pocket Full Journal (4x4)",
+              "minWidth": "250dp",
+              "minHeight": "250dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 4,
+              "resizeMode": "horizontal|vertical",
+              "description": "Large expansive dashboard with complete feed and 1-tap action bar"
             }
           ]
         }

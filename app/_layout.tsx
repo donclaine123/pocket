@@ -12,7 +12,7 @@ import {
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { ActivityIndicator, Appearance, View } from "react-native";
+import { ActivityIndicator, Appearance, AppState, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { COLORS } from "../constants/theme";
 import { refreshAllWidgets } from "../services/widgetSync";
@@ -29,12 +29,27 @@ export default function RootLayout() {
     DMSans_700Bold,
   });
 
-  // Listen for system dark/light mode toggle and automatically refresh widgets
+  // Listen for system dark/light mode toggle and app foregrounding, automatically refreshing widgets
   React.useEffect(() => {
-    const subscription = Appearance.addChangeListener(() => {
-      refreshAllWidgets();
+    // 1. Refresh immediately on app launch / mount
+    refreshAllWidgets(Appearance.getColorScheme() === "dark");
+
+    // 2. Realtime listener for system appearance changes
+    const appearanceSub = Appearance.addChangeListener(({ colorScheme }) => {
+      refreshAllWidgets(colorScheme === "dark");
     });
-    return () => subscription.remove();
+
+    // 3. Listener for app resume / return to foreground
+    const appStateSub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        refreshAllWidgets(Appearance.getColorScheme() === "dark");
+      }
+    });
+
+    return () => {
+      appearanceSub.remove();
+      appStateSub.remove();
+    };
   }, []);
 
   React.useEffect(() => {

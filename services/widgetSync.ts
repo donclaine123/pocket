@@ -159,11 +159,21 @@ export async function updateAllWidgetsFromTxns(
 /**
  * Refreshes all widgets using current Appearance theme and cached transaction data.
  */
-export async function refreshAllWidgets(): Promise<void> {
+export async function refreshAllWidgets(forcedIsDark?: boolean): Promise<void> {
   if (Platform.OS !== "android") return;
   try {
     const widgetData = await getStoredWidgetData();
-    widgetData.isDark = Appearance.getColorScheme() === "dark";
+    const isDark =
+      typeof forcedIsDark === "boolean"
+        ? forcedIsDark
+        : Appearance.getColorScheme() === "dark";
+    widgetData.isDark = isDark;
+
+    // Cache with updated theme
+    await AsyncStorage.setItem(
+      WIDGET_DATA_STORAGE_KEY,
+      JSON.stringify(widgetData)
+    );
 
     await Promise.allSettled([
       requestWidgetUpdate({

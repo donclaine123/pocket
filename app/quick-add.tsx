@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
 import {
+  AppState,
   BackHandler,
   Keyboard,
   KeyboardAvoidingView,
@@ -28,6 +29,7 @@ import {
   loadTransactions,
   saveTransactions,
 } from "../services/storage";
+import { refreshAllWidgets } from "../services/widgetSync";
 
 export default function QuickAddScreen() {
   const { fromWidget } = useLocalSearchParams<{ fromWidget?: string }>();
@@ -55,20 +57,36 @@ export default function QuickAddScreen() {
     };
   }, []);
 
-  // Load user's preferred currency on mount
+  // Load user's preferred currency and sync widgets on mount
   useEffect(() => {
     loadSavedCurrency().then((curr) => {
       if (curr) setCurrency(curr);
     });
+    refreshAllWidgets();
   }, []);
 
-  // Exit handler: closes directly to Android home screen without entering the main app
+  // Reset route to home when app is backgrounded so reopening app from launcher opens home
+  useEffect(() => {
+    if (fromWidget === "true") {
+      const sub = AppState.addEventListener("change", (nextState) => {
+        if (nextState === "background") {
+          router.replace("/");
+        }
+      });
+      return () => sub.remove();
+    }
+  }, [fromWidget]);
+
+  // Exit handler: closes directly to Android home screen without staying trapped in quick-add
   const handleExit = () => {
     Keyboard.dismiss();
     safeHaptic.light();
     if (Platform.OS === "android") {
       if (fromWidget === "true") {
-        BackHandler.exitApp();
+        router.replace("/");
+        setTimeout(() => {
+          BackHandler.exitApp();
+        }, 100);
       } else {
         if (router.canGoBack()) {
           router.back();
@@ -134,9 +152,16 @@ export default function QuickAddScreen() {
       await saveTransactions([newTxn, ...existing]);
       safeHaptic.success();
 
-      // Exit directly to Android home screen without navigating into the app
+      // Exit directly to Android home screen without staying trapped in quick-add
       if (Platform.OS === "android") {
-        BackHandler.exitApp();
+        if (fromWidget === "true") {
+          router.replace("/");
+          setTimeout(() => {
+            BackHandler.exitApp();
+          }, 100);
+        } else {
+          handleExit();
+        }
       } else {
         handleExit();
       }

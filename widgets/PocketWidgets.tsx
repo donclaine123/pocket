@@ -877,7 +877,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
   } = props;
   const isDark = resolveIsDark(props.isDark);
   const theme = getWidgetTheme(isDark);
-  const displayTxns = recentTxns.slice(0, 1);
+  const displayTxns = recentTxns.slice(0, 3);
 
   return (
     <FlexWidget
@@ -1049,75 +1049,79 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
               />
             </FlexWidget>
 
-            {/* Recent Activity Card */}
+            {/* Recent Activity List (Up to 3 items) */}
             <FlexWidget
               style={{
                 width: "match_parent",
                 flex: 1,
-                justifyContent: "center",
-                paddingVertical: 2,
+                justifyContent: "space-between",
+                paddingVertical: 1,
               }}
               clickAction="OPEN_APP"
             >
               {displayTxns.length > 0 ? (
-                displayTxns.map((t) => (
+                displayTxns.map((t, idx) => (
                   <FlexWidget
-                    key={t.id}
+                    key={t.id || `txn_${idx}`}
                     style={{
                       width: "match_parent",
                       backgroundColor: theme.bg,
                       borderColor: theme.borderSubtle,
                       borderWidth: 1.5,
-                      borderRadius: 11,
-                      padding: 6,
+                      borderRadius: 10,
+                      paddingVertical: displayTxns.length > 2 ? 3 : 5,
+                      paddingHorizontal: 6,
                       flexDirection: "row",
                       alignItems: "center",
+                      marginBottom: idx < displayTxns.length - 1 ? 2.5 : 0,
                     }}
                   >
                     <FlexWidget
                       style={{
-                        width: 24,
-                        height: 24,
-                        borderRadius: 7,
+                        width: displayTxns.length > 2 ? 20 : 22,
+                        height: displayTxns.length > 2 ? 20 : 22,
+                        borderRadius: 6,
                         backgroundColor: theme.butter,
                         borderColor: theme.butterBorder,
                         borderWidth: 1,
                         alignItems: "center",
                         justifyContent: "center",
-                        marginRight: 6,
+                        marginRight: 5,
                       }}
                     >
                       <TextWidget
                         text={getCategoryEmoji(t.category, t.note)}
-                        style={{ fontSize: 10 }}
+                        style={{ fontSize: displayTxns.length > 2 ? 8.5 : 9.5 }}
                       />
                     </FlexWidget>
 
                     <FlexWidget style={{ flex: 1, flexDirection: "column" }}>
                       <TextWidget
-                        text={t.note ? t.note : t.category}
+                        text={t.note ? t.note : getCategoryLabel(t.category)}
                         style={{
-                          fontSize: 9.5,
+                          fontSize: displayTxns.length > 2 ? 8.5 : 9.5,
                           fontWeight: "bold",
                           color: theme.textPrimary,
                         }}
                         maxLines={1}
                         truncate="END"
                       />
-                      <TextWidget
-                        text={getCategoryLabel(t.category)}
-                        style={{
-                          fontSize: 7,
-                          fontWeight: "bold",
-                          color: theme.textMuted,
-                        }}
-                      />
+                      {displayTxns.length <= 2 && (
+                        <TextWidget
+                          text={getCategoryLabel(t.category)}
+                          style={{
+                            fontSize: 6.5,
+                            fontWeight: "bold",
+                            color: theme.textMuted,
+                          }}
+                        />
+                      )}
                     </FlexWidget>
 
                     <TextWidget
                       text={`${t.type === "income" ? "+" : "-"}${currencySymbol}${t.amount.toFixed(0)}`}
                       style={{
-                        fontSize: 10.5,
+                        fontSize: displayTxns.length > 2 ? 9 : 10,
                         fontWeight: "bold",
                         color: t.type === "income" ? theme.sage : theme.coral,
                         marginLeft: 4,
@@ -1158,6 +1162,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
                 borderRadius: 13,
                 paddingRight: 2,
                 paddingBottom: 2.5,
+                marginTop: 2,
               }}
               clickAction="OPEN_URI"
               clickActionData={{ uri: "pocket://quick-add?fromWidget=true" }}
@@ -1165,7 +1170,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
               <FlexWidget
                 style={{
                   width: "match_parent",
-                  height: 30,
+                  height: 28,
                   backgroundColor: theme.actionBtnBg,
                   borderColor: theme.actionBtnBorder,
                   borderWidth: 1.5,
@@ -1178,7 +1183,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
                 <TextWidget
                   text="+ Log Expense"
                   style={{
-                    fontSize: 10.5,
+                    fontSize: 10,
                     fontWeight: "bold",
                     color: theme.actionBtnText,
                   }}

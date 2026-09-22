@@ -89,6 +89,7 @@ import {
   saveSavedCurrency,
   saveTransactions,
 } from "../services/storage";
+import { updateAllWidgetsFromTxns } from "../services/widgetSync";
 import { CURRENCIES, CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
 import {
   ALL_CATEGORIES,
@@ -286,7 +287,11 @@ export default function HomeScreen() {
 
   useEffect(() => {
     loadSavedCurrency().then((saved) => {
-      if (saved) setCurrency(saved);
+      const activeCurr = saved || DEFAULT_CURRENCY;
+      setCurrency(activeCurr);
+      loadTransactions().then((txns) => {
+        updateAllWidgetsFromTxns(txns, activeCurr.symbol);
+      });
     });
     loadConversionEnabled().then((enabled) => {
       setLiveConversionEnabled(enabled);

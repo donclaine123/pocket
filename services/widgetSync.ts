@@ -13,6 +13,7 @@ import {
 } from "../widgets/PocketWidgets";
 import { Txn, CategoryKey } from "../types/transaction";
 import { toISODate } from "./dateUtils";
+import { DEFAULT_CURRENCY } from "../constants/currencies";
 
 export const WIDGET_DATA_STORAGE_KEY = "@pocket_widget_data";
 const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
@@ -22,7 +23,7 @@ const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
  * Loads current widget summary data from AsyncStorage.
  */
 export async function getStoredWidgetData(): Promise<WidgetDataProps> {
-  let currencySymbol = "$";
+  let currencySymbol = DEFAULT_CURRENCY.symbol;
   try {
     const rawCurr = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
     if (rawCurr) {
@@ -66,20 +67,24 @@ export async function updateAllWidgetsFromTxns(
         const rawCurr = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
         if (rawCurr) {
           const parsed = JSON.parse(rawCurr);
-          currencySymbol = parsed?.symbol || "$";
+          currencySymbol = parsed?.symbol || DEFAULT_CURRENCY.symbol;
         }
       } catch {}
     }
-    if (!currencySymbol) currencySymbol = "$";
+    if (!currencySymbol) currencySymbol = DEFAULT_CURRENCY.symbol;
 
     const todayStr = toISODate(new Date());
 
     let totalBalance = 0;
     let todaySpent = 0;
+    let todayIncome = 0;
 
     for (const t of txns) {
       if (t.type === "income") {
         totalBalance += t.amount;
+        if (t.date.startsWith(todayStr)) {
+          todayIncome += t.amount;
+        }
       } else {
         totalBalance -= t.amount;
         if (t.date.startsWith(todayStr)) {
@@ -88,18 +93,20 @@ export async function updateAllWidgetsFromTxns(
       }
     }
 
-    const recentTxns = txns.slice(0, 3).map((t) => ({
+    const recentTxns = txns.slice(0, 5).map((t) => ({
       id: t.id,
       type: t.type,
       amount: t.amount,
       category: t.category,
       note: t.note || "",
+      date: t.date,
     }));
 
     const widgetData: WidgetDataProps = {
       currencySymbol,
       totalBalance,
       todaySpent,
+      todayIncome,
       recentTxns,
     };
 
@@ -178,22 +185,26 @@ export async function logPresetTransactionFromWidget(
   } catch {}
 
   // Recalculate metrics
-  let currencySymbol = "$";
+  let currencySymbol = DEFAULT_CURRENCY.symbol;
   try {
     const rawCurr = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
     if (rawCurr) {
       const parsed = JSON.parse(rawCurr);
-      currencySymbol = parsed?.symbol || "$";
+      currencySymbol = parsed?.symbol || DEFAULT_CURRENCY.symbol;
     }
   } catch {}
 
   const todayStr = toISODate(new Date());
   let totalBalance = 0;
   let todaySpent = 0;
+  let todayIncome = 0;
 
   for (const t of updatedTxns) {
     if (t.type === "income") {
       totalBalance += t.amount;
+      if (t.date.startsWith(todayStr)) {
+        todayIncome += t.amount;
+      }
     } else {
       totalBalance -= t.amount;
       if (t.date.startsWith(todayStr)) {
@@ -202,18 +213,20 @@ export async function logPresetTransactionFromWidget(
     }
   }
 
-  const recentTxns = updatedTxns.slice(0, 3).map((t) => ({
+  const recentTxns = updatedTxns.slice(0, 5).map((t) => ({
     id: t.id,
     type: t.type,
     amount: t.amount,
     category: t.category,
     note: t.note || "",
+    date: t.date,
   }));
 
   const widgetData: WidgetDataProps = {
     currencySymbol,
     totalBalance,
     todaySpent,
+    todayIncome,
     recentTxns,
   };
 

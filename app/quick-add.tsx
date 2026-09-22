@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   BackHandler,
+  Keyboard,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -36,6 +37,23 @@ export default function QuickAddScreen() {
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [currency, setCurrency] = useState<CurrencyOption>(DEFAULT_CURRENCY);
+  const [isKeyboardVisible, setKeyboardVisible] = useState(false);
+
+  // Track keyboard visibility so back button can dismiss keyboard first without window jitter
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "android" ? "keyboardDidShow" : "keyboardWillShow",
+      () => setKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "android" ? "keyboardDidHide" : "keyboardWillHide",
+      () => setKeyboardVisible(false)
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Load user's preferred currency on mount
   useEffect(() => {
@@ -46,9 +64,18 @@ export default function QuickAddScreen() {
 
   // Exit handler: closes directly to Android home screen without entering the main app
   const handleExit = () => {
+    Keyboard.dismiss();
     safeHaptic.light();
     if (Platform.OS === "android") {
-      BackHandler.exitApp();
+      if (fromWidget === "true") {
+        BackHandler.exitApp();
+      } else {
+        if (router.canGoBack()) {
+          router.back();
+        } else {
+          router.replace("/");
+        }
+      }
     } else {
       if (router.canGoBack()) {
         router.back();
@@ -58,17 +85,21 @@ export default function QuickAddScreen() {
     }
   };
 
-  // Intercept Android hardware back button so it exits to home screen rather than opening main app
+  // Intercept Android hardware back button cleanly
   useEffect(() => {
     if (Platform.OS === "android") {
       const onBackPress = () => {
+        if (isKeyboardVisible) {
+          Keyboard.dismiss();
+          return true;
+        }
         handleExit();
         return true;
       };
       const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
       return () => sub.remove();
     }
-  }, []);
+  }, [isKeyboardVisible, fromWidget]);
 
   const categories = type === "expense" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
 
@@ -117,7 +148,7 @@ export default function QuickAddScreen() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
       style={styles.container}
     >
       <Pressable style={styles.backdrop} onPress={handleExit} />
@@ -216,6 +247,7 @@ export default function QuickAddScreen() {
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={styles.categoryScroll}
         >
           {categories.map((c) => {
@@ -279,20 +311,21 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: "rgba(51, 47, 44, 0.45)",
-    justifyContent: "center",
+    justifyContent: "flex-end",
     alignItems: "center",
-    padding: 16,
+    paddingHorizontal: 16,
+    paddingBottom: Platform.OS === "android" ? 16 : 24,
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
   },
   card: {
     width: "100%",
-    maxWidth: 380,
+    maxWidth: 420,
     backgroundColor: COLORS.cream,
-    borderRadius: 24,
+    borderRadius: 28,
     padding: 20,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: COLORS.cardBorder,
   },
   header: {

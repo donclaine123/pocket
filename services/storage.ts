@@ -308,7 +308,8 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
     }
 
     // 4. Keep home screen widgets updated in real time
-    updateAllWidgetsFromTxns(txns);
+    const activeCurrency = await loadSavedCurrency();
+    updateAllWidgetsFromTxns(txns, activeCurrency.symbol);
   } catch (error) {
     console.error("[Storage] Error saving transactions:", error);
   }
@@ -356,7 +357,8 @@ export async function deleteTransaction(id: string): Promise<void> {
     }
 
     // 4. Update home screen widgets
-    updateAllWidgetsFromTxns(remainingTxns);
+    const activeCurrency = await loadSavedCurrency();
+    updateAllWidgetsFromTxns(remainingTxns, activeCurrency.symbol);
   } catch (error) {
     console.error("[Storage] Error deleting transaction:", error);
   }
@@ -380,6 +382,9 @@ export async function clearTransactions(): Promise<void> {
     if (userId && isSupabaseConfigured) {
       await supabase.from("transactions").delete().eq("user_id", userId);
     }
+
+    const activeCurrency = await loadSavedCurrency();
+    updateAllWidgetsFromTxns([], activeCurrency.symbol);
   } catch (error) {
     console.error("[Storage] Error clearing transactions:", error);
   }
@@ -407,7 +412,11 @@ export async function getSyncStatus(): Promise<SyncState> {
 export async function loadSavedCurrency(): Promise<CurrencyOption> {
   try {
     const raw = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
-    if (!raw) return DEFAULT_CURRENCY;
+    if (!raw) {
+      // Persist default currency (PHP ₱) so widgets and background workers read it immediately
+      await AsyncStorage.setItem(CURRENCY_STORAGE_KEY, JSON.stringify(DEFAULT_CURRENCY));
+      return DEFAULT_CURRENCY;
+    }
     const parsed = JSON.parse(raw);
     const found = CURRENCIES.find((c) => c.code === parsed.code);
     return found || parsed || DEFAULT_CURRENCY;

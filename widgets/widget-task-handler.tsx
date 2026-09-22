@@ -1,4 +1,5 @@
 import React from "react";
+import { Appearance } from "react-native";
 import type { WidgetTaskHandlerProps } from "react-native-android-widget";
 import {
   Balance2x1Widget,
@@ -18,6 +19,7 @@ export async function widgetTaskHandler(props: WidgetTaskHandlerProps): Promise<
   const { widgetInfo, widgetAction, clickAction, clickActionData, renderWidget } = props;
 
   let data: WidgetDataProps = await getStoredWidgetData();
+  data.isDark = Appearance.getColorScheme() === "dark";
 
   // 1. Handle Background 1-Tap Preset Clicks (e.g. +$5 Coffee, +$15 Meal, +$25 Groceries)
   if (widgetAction === "WIDGET_CLICK" && clickAction === "ADD_PRESET") {

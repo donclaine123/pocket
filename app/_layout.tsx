@@ -12,9 +12,10 @@ import {
 import { Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import React from "react";
-import { ActivityIndicator, View } from "react-native";
+import { ActivityIndicator, Appearance, View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { COLORS } from "../constants/theme";
+import { refreshAllWidgets } from "../services/widgetSync";
 
 export default function RootLayout() {
   const [fredokaLoaded, fredokaError] = useFredoka({
@@ -27,6 +28,14 @@ export default function RootLayout() {
     DMSans_500Medium,
     DMSans_700Bold,
   });
+
+  // Listen for system dark/light mode toggle and automatically refresh widgets
+  React.useEffect(() => {
+    const subscription = Appearance.addChangeListener(() => {
+      refreshAllWidgets();
+    });
+    return () => subscription.remove();
+  }, []);
 
   React.useEffect(() => {
     if (typeof document !== "undefined") {

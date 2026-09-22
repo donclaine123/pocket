@@ -1,5 +1,5 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { Platform } from "react-native";
+import { Appearance, Platform } from "react-native";
 import { requestWidgetUpdate } from "react-native-android-widget";
 import React from "react";
 import {
@@ -32,11 +32,14 @@ export async function getStoredWidgetData(): Promise<WidgetDataProps> {
     }
   } catch {}
 
+  const isDark = Appearance.getColorScheme() === "dark";
+
   try {
     const raw = await AsyncStorage.getItem(WIDGET_DATA_STORAGE_KEY);
     if (raw) {
       const data = JSON.parse(raw);
       data.currencySymbol = currencySymbol;
+      data.isDark = isDark;
       return data;
     }
   } catch (err) {
@@ -47,6 +50,8 @@ export async function getStoredWidgetData(): Promise<WidgetDataProps> {
     currencySymbol,
     totalBalance: 0,
     todaySpent: 0,
+    todayIncome: 0,
+    isDark,
     recentTxns: [],
   };
 }
@@ -102,11 +107,14 @@ export async function updateAllWidgetsFromTxns(
       date: t.date,
     }));
 
+    const isDark = Appearance.getColorScheme() === "dark";
+
     const widgetData: WidgetDataProps = {
       currencySymbol,
       totalBalance,
       todaySpent,
       todayIncome,
+      isDark,
       recentTxns,
     };
 
@@ -145,6 +153,46 @@ export async function updateAllWidgetsFromTxns(
     ]);
   } catch (error) {
     console.warn("[WidgetSync] Error updating widgets:", error);
+  }
+}
+
+/**
+ * Refreshes all widgets using current Appearance theme and cached transaction data.
+ */
+export async function refreshAllWidgets(): Promise<void> {
+  if (Platform.OS !== "android") return;
+  try {
+    const widgetData = await getStoredWidgetData();
+    widgetData.isDark = Appearance.getColorScheme() === "dark";
+
+    await Promise.allSettled([
+      requestWidgetUpdate({
+        widgetName: "QuickAdd1x1",
+        renderWidget: () => React.createElement(QuickAdd1x1Widget, widgetData),
+      }),
+      requestWidgetUpdate({
+        widgetName: "Balance2x1",
+        renderWidget: () => React.createElement(Balance2x1Widget, widgetData),
+      }),
+      requestWidgetUpdate({
+        widgetName: "Banner4x1",
+        renderWidget: () => React.createElement(Banner4x1Widget, widgetData),
+      }),
+      requestWidgetUpdate({
+        widgetName: "Glance2x2",
+        renderWidget: () => React.createElement(Glance2x2Widget, widgetData),
+      }),
+      requestWidgetUpdate({
+        widgetName: "Dashboard4x2",
+        renderWidget: () => React.createElement(Dashboard4x2Widget, widgetData),
+      }),
+      requestWidgetUpdate({
+        widgetName: "FullJournal4x4",
+        renderWidget: () => React.createElement(FullJournal4x4Widget, widgetData),
+      }),
+    ]);
+  } catch (err) {
+    console.warn("[WidgetSync] Error refreshing widgets:", err);
   }
 }
 

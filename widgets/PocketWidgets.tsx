@@ -1,4 +1,5 @@
 import React from "react";
+import { Appearance } from "react-native";
 import {
   FlexWidget,
   TextWidget,
@@ -6,9 +7,9 @@ import {
 import { DEFAULT_CURRENCY } from "../constants/currencies";
 
 /**
- * Tactile Cozy Brutalist Palette from user's design preview
+ * Tactile Cozy Brutalist Palette - Supports dynamic Light & Dark themes
  */
-const POCKET_COLORS = {
+export const POCKET_COLORS = {
   bg: "#FAF5EA",
   darkbg: "#141211",
   paper: "#FFFDF9",
@@ -28,11 +29,92 @@ const POCKET_COLORS = {
   success: "#1F6347",
 } as const;
 
+export type WidgetTheme = ReturnType<typeof getWidgetTheme>;
+
+export function getWidgetTheme(isDark: boolean) {
+  if (isDark) {
+    return {
+      isDark: true,
+      shadow: "#000000",
+      paper: "#1B1715",
+      border: "#423934",
+      borderSubtle: "#332B26",
+      divider: "#2D2622",
+      bg: "#241F1C",
+      textPrimary: "#F7F2EB",
+      textMuted: "#A3978E",
+      textSubtle: "#756B63",
+      coral: "#FF9270",
+      coralLight: "#38221B",
+      coralBorder: "#5A3026",
+      butter: "#F5C869",
+      butterLight: "#362A17",
+      butterBorder: "#544122",
+      tagButterText: "#F5C869",
+      sage: "#8FD3B4",
+      sageLight: "#183226",
+      sageBorder: "#254D3B",
+      incomeText: "#8FD3B4",
+      actionBtnBg: "#8FD3B4",
+      actionBtnText: "#18261E",
+      actionBtnBorder: "#423934",
+      instantPillBg: "#29231F",
+      instantPillText: "#A3978E",
+      placeholderBg: "#221D1A",
+      placeholderBorder: "#38302B",
+      trackIncomeBg: "#204233",
+      trackSpentBg: "#47271E",
+    } as const;
+  }
+  return {
+    isDark: false,
+    shadow: "#29221F",
+    paper: "#FFFDF9",
+    border: "#29221F",
+    borderSubtle: "#29221F25",
+    divider: "#29221F18",
+    bg: "#FAF5EA",
+    textPrimary: "#29221F",
+    textMuted: "#7E756F",
+    textSubtle: "#B8ADA4",
+    coral: "#FF8A65",
+    coralLight: "#FFE8DF",
+    coralBorder: "#29221F",
+    butter: "#F5C869",
+    butterLight: "#FDF3DC",
+    butterBorder: "#29221F",
+    tagButterText: "#29221F",
+    sage: "#8FD3B4",
+    sageLight: "#E2F6EE",
+    sageBorder: "#29221F",
+    incomeText: "#1F6347",
+    actionBtnBg: "#8FD3B4",
+    actionBtnText: "#29221F",
+    actionBtnBorder: "#29221F",
+    instantPillBg: "#FFFDF9",
+    instantPillText: "#B8ADA4",
+    placeholderBg: "#FAF5EA",
+    placeholderBorder: "#29221F25",
+    trackIncomeBg: "#8FD3B450",
+    trackSpentBg: "#FF8A6540",
+  } as const;
+}
+
+export function resolveIsDark(propsDark?: boolean): boolean {
+  if (typeof propsDark === "boolean") return propsDark;
+  try {
+    return Appearance.getColorScheme() === "dark";
+  } catch {
+    return false;
+  }
+}
+
 export interface WidgetDataProps {
   currencySymbol: string;
   totalBalance: number;
   todaySpent: number;
   todayIncome?: number;
+  isDark?: boolean;
   recentTxns: Array<{
     id: string;
     type: "expense" | "income";
@@ -111,7 +193,11 @@ function getCategoryLabel(category: string): string {
  * 1. 1x1 Quick Entry Widget
  * Compact brutalist button that triggers instant Quick-Add popup modal.
  */
-export function QuickAdd1x1Widget({ currencySymbol = DEFAULT_CURRENCY.symbol }: Partial<WidgetDataProps>) {
+export function QuickAdd1x1Widget(props: Partial<WidgetDataProps>) {
+  const { currencySymbol = DEFAULT_CURRENCY.symbol } = props;
+  const isDark = resolveIsDark(props.isDark);
+  const theme = getWidgetTheme(isDark);
+
   return (
     <FlexWidget
       style={{
@@ -125,7 +211,7 @@ export function QuickAdd1x1Widget({ currencySymbol = DEFAULT_CURRENCY.symbol }: 
         style={{
           height: "match_parent",
           width: "match_parent",
-          backgroundColor: POCKET_COLORS.border,
+          backgroundColor: theme.shadow,
           borderRadius: 24,
           paddingRight: 3,
           paddingBottom: 4,
@@ -136,9 +222,9 @@ export function QuickAdd1x1Widget({ currencySymbol = DEFAULT_CURRENCY.symbol }: 
           style={{
             height: "match_parent",
             width: "match_parent",
-            backgroundColor: POCKET_COLORS.paper,
+            backgroundColor: theme.paper,
             borderRadius: 22,
-            borderColor: POCKET_COLORS.border,
+            borderColor: theme.border,
             borderWidth: 2,
             alignItems: "center",
             justifyContent: "center",
@@ -150,7 +236,7 @@ export function QuickAdd1x1Widget({ currencySymbol = DEFAULT_CURRENCY.symbol }: 
           {/* Button with Brutalist Shadow */}
           <FlexWidget
             style={{
-              backgroundColor: POCKET_COLORS.border,
+              backgroundColor: theme.shadow,
               borderRadius: 14,
               paddingRight: 2,
               paddingBottom: 2.5,
@@ -162,8 +248,8 @@ export function QuickAdd1x1Widget({ currencySymbol = DEFAULT_CURRENCY.symbol }: 
                 width: 44,
                 height: 44,
                 borderRadius: 12,
-                backgroundColor: POCKET_COLORS.butter,
-                borderColor: POCKET_COLORS.border,
+                backgroundColor: theme.butter,
+                borderColor: theme.butterBorder,
                 borderWidth: 1.5,
                 alignItems: "center",
                 justifyContent: "center",
@@ -174,7 +260,7 @@ export function QuickAdd1x1Widget({ currencySymbol = DEFAULT_CURRENCY.symbol }: 
                 style={{
                   fontSize: 24,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.border,
+                  color: "#29221F",
                   textAlign: "center",
                 }}
               />
@@ -186,7 +272,7 @@ export function QuickAdd1x1Widget({ currencySymbol = DEFAULT_CURRENCY.symbol }: 
             style={{
               fontSize: 10.5,
               fontWeight: "bold",
-              color: POCKET_COLORS.border,
+              color: theme.textPrimary,
               textAlign: "center",
             }}
           />
@@ -200,11 +286,15 @@ export function QuickAdd1x1Widget({ currencySymbol = DEFAULT_CURRENCY.symbol }: 
  * 2. 2x1 Balance & Quick Action Widget
  * Compact horizontal badge with spending, total balance, and a "+" button.
  */
-export function Balance2x1Widget({
-  currencySymbol = DEFAULT_CURRENCY.symbol,
-  totalBalance = 0,
-  todaySpent = 0,
-}: Partial<WidgetDataProps>) {
+export function Balance2x1Widget(props: Partial<WidgetDataProps>) {
+  const {
+    currencySymbol = DEFAULT_CURRENCY.symbol,
+    totalBalance = 0,
+    todaySpent = 0,
+  } = props;
+  const isDark = resolveIsDark(props.isDark);
+  const theme = getWidgetTheme(isDark);
+
   return (
     <FlexWidget
       style={{
@@ -217,7 +307,7 @@ export function Balance2x1Widget({
         style={{
           height: "match_parent",
           width: "match_parent",
-          backgroundColor: POCKET_COLORS.border,
+          backgroundColor: theme.shadow,
           borderRadius: 24,
           paddingRight: 3,
           paddingBottom: 4,
@@ -227,9 +317,9 @@ export function Balance2x1Widget({
           style={{
             height: "match_parent",
             width: "match_parent",
-            backgroundColor: POCKET_COLORS.paper,
+            backgroundColor: theme.paper,
             borderRadius: 22,
-            borderColor: POCKET_COLORS.border,
+            borderColor: theme.border,
             borderWidth: 2,
             padding: 10,
             flexDirection: "row",
@@ -251,8 +341,8 @@ export function Balance2x1Widget({
                   width: 22,
                   height: 22,
                   borderRadius: 7,
-                  backgroundColor: POCKET_COLORS.coralLight,
-                  borderColor: POCKET_COLORS.border,
+                  backgroundColor: theme.coralLight,
+                  borderColor: theme.coralBorder,
                   borderWidth: 1.5,
                   alignItems: "center",
                   justifyContent: "center",
@@ -264,7 +354,7 @@ export function Balance2x1Widget({
                   style={{
                     fontSize: 10,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.coral,
+                    color: theme.coral,
                   }}
                 />
               </FlexWidget>
@@ -273,7 +363,7 @@ export function Balance2x1Widget({
                 style={{
                   fontSize: 7.5,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.muted,
+                  color: theme.textMuted,
                   letterSpacing: 0.5,
                 }}
               />
@@ -284,7 +374,7 @@ export function Balance2x1Widget({
               style={{
                 fontSize: 14,
                 fontWeight: "bold",
-                color: POCKET_COLORS.border,
+                color: theme.textPrimary,
               }}
             />
 
@@ -293,7 +383,7 @@ export function Balance2x1Widget({
               style={{
                 fontSize: 9,
                 fontWeight: "500",
-                color: POCKET_COLORS.muted,
+                color: theme.textMuted,
                 marginTop: 1,
               }}
             />
@@ -302,7 +392,7 @@ export function Balance2x1Widget({
           {/* Right Column: 1-Tap "+" Action with Brutalist Shadow */}
           <FlexWidget
             style={{
-              backgroundColor: POCKET_COLORS.border,
+              backgroundColor: theme.shadow,
               borderRadius: 14,
               paddingRight: 2,
               paddingBottom: 2.5,
@@ -315,8 +405,8 @@ export function Balance2x1Widget({
                 width: 38,
                 height: 38,
                 borderRadius: 12,
-                backgroundColor: POCKET_COLORS.sage,
-                borderColor: POCKET_COLORS.border,
+                backgroundColor: theme.actionBtnBg,
+                borderColor: theme.actionBtnBorder,
                 borderWidth: 1.5,
                 alignItems: "center",
                 justifyContent: "center",
@@ -327,7 +417,7 @@ export function Balance2x1Widget({
                 style={{
                   fontSize: 20,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.border,
+                  color: theme.actionBtnText,
                   textAlign: "center",
                 }}
               />
@@ -347,11 +437,15 @@ export function Balance2x1Widget({
  * - Safe limit status indicator
  * - Quick Log button (+ Quick Log)
  */
-export function Banner4x1Widget({
-  currencySymbol = DEFAULT_CURRENCY.symbol,
-  totalBalance = 0,
-  todaySpent = 0,
-}: Partial<WidgetDataProps>) {
+export function Banner4x1Widget(props: Partial<WidgetDataProps>) {
+  const {
+    currencySymbol = DEFAULT_CURRENCY.symbol,
+    totalBalance = 0,
+    todaySpent = 0,
+  } = props;
+  const isDark = resolveIsDark(props.isDark);
+  const theme = getWidgetTheme(isDark);
+
   return (
     <FlexWidget
       style={{
@@ -364,7 +458,7 @@ export function Banner4x1Widget({
         style={{
           height: "match_parent",
           width: "match_parent",
-          backgroundColor: POCKET_COLORS.border,
+          backgroundColor: theme.shadow,
           borderRadius: 24,
           paddingRight: 3,
           paddingBottom: 4,
@@ -374,9 +468,9 @@ export function Banner4x1Widget({
           style={{
             height: "match_parent",
             width: "match_parent",
-            backgroundColor: POCKET_COLORS.paper,
+            backgroundColor: theme.paper,
             borderRadius: 22,
-            borderColor: POCKET_COLORS.border,
+            borderColor: theme.border,
             borderWidth: 2,
             paddingHorizontal: 12,
             paddingVertical: 7,
@@ -399,8 +493,8 @@ export function Banner4x1Widget({
                 width: 30,
                 height: 30,
                 borderRadius: 9,
-                backgroundColor: POCKET_COLORS.coralLight,
-                borderColor: POCKET_COLORS.border,
+                backgroundColor: theme.coralLight,
+                borderColor: theme.coralBorder,
                 borderWidth: 1.5,
                 alignItems: "center",
                 justifyContent: "center",
@@ -412,7 +506,7 @@ export function Banner4x1Widget({
                 style={{
                   fontSize: 11,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.coral,
+                  color: theme.coral,
                 }}
               />
             </FlexWidget>
@@ -424,7 +518,7 @@ export function Banner4x1Widget({
                 style={{
                   fontSize: 7.5,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.muted,
+                  color: theme.textMuted,
                   letterSpacing: 0.5,
                 }}
               />
@@ -433,7 +527,7 @@ export function Banner4x1Widget({
                 style={{
                   fontSize: 12,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.border,
+                  color: theme.textPrimary,
                   marginTop: 1,
                 }}
               />
@@ -444,7 +538,7 @@ export function Banner4x1Widget({
               style={{
                 width: 1.5,
                 height: 20,
-                backgroundColor: "#29221F20",
+                backgroundColor: theme.divider,
                 marginHorizontal: 10,
               }}
             />
@@ -456,7 +550,7 @@ export function Banner4x1Widget({
                   width: 6,
                   height: 6,
                   borderRadius: 3,
-                  backgroundColor: POCKET_COLORS.sage,
+                  backgroundColor: theme.sage,
                   marginRight: 4,
                 }}
               />
@@ -465,7 +559,7 @@ export function Banner4x1Widget({
                 style={{
                   fontSize: 9,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.muted,
+                  color: theme.textMuted,
                 }}
               />
             </FlexWidget>
@@ -474,7 +568,7 @@ export function Banner4x1Widget({
           {/* Right: Quick Log Button with Brutalist Shadow */}
           <FlexWidget
             style={{
-              backgroundColor: POCKET_COLORS.border,
+              backgroundColor: theme.shadow,
               borderRadius: 13,
               paddingRight: 2,
               paddingBottom: 2.5,
@@ -485,8 +579,8 @@ export function Banner4x1Widget({
             <FlexWidget
               style={{
                 height: 30,
-                backgroundColor: POCKET_COLORS.butter,
-                borderColor: POCKET_COLORS.border,
+                backgroundColor: theme.butter,
+                borderColor: theme.butterBorder,
                 borderWidth: 1.5,
                 borderRadius: 11,
                 paddingHorizontal: 11,
@@ -500,7 +594,7 @@ export function Banner4x1Widget({
                 style={{
                   fontSize: 10.5,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.border,
+                  color: "#29221F",
                 }}
               />
             </FlexWidget>
@@ -515,12 +609,15 @@ export function Banner4x1Widget({
  * 4. 2x2 Pocket Journal Glance Widget
  * Compact square notebook companion matching the brutalist theme.
  */
-export function Glance2x2Widget({
-  currencySymbol = DEFAULT_CURRENCY.symbol,
-  totalBalance = 0,
-  todaySpent = 0,
-  recentTxns = [],
-}: Partial<WidgetDataProps>) {
+export function Glance2x2Widget(props: Partial<WidgetDataProps>) {
+  const {
+    currencySymbol = DEFAULT_CURRENCY.symbol,
+    totalBalance = 0,
+    todaySpent = 0,
+    recentTxns = [],
+  } = props;
+  const isDark = resolveIsDark(props.isDark);
+  const theme = getWidgetTheme(isDark);
   const displayTxns = recentTxns.slice(0, 1);
 
   return (
@@ -535,7 +632,7 @@ export function Glance2x2Widget({
         style={{
           height: "match_parent",
           width: "match_parent",
-          backgroundColor: POCKET_COLORS.border,
+          backgroundColor: theme.shadow,
           borderRadius: 24,
           paddingRight: 3,
           paddingBottom: 4,
@@ -545,9 +642,9 @@ export function Glance2x2Widget({
           style={{
             height: "match_parent",
             width: "match_parent",
-            backgroundColor: POCKET_COLORS.paper,
+            backgroundColor: theme.paper,
             borderRadius: 22,
-            borderColor: POCKET_COLORS.border,
+            borderColor: theme.border,
             borderWidth: 2,
             padding: 10,
             flexDirection: "column",
@@ -557,10 +654,11 @@ export function Glance2x2Widget({
           {/* Header: Brand & Balance */}
           <FlexWidget
             style={{
+              width: "match_parent",
               flexDirection: "row",
               alignItems: "center",
               borderBottomWidth: 1.5,
-              borderColor: "#29221F18",
+              borderColor: theme.divider,
               paddingBottom: 4,
             }}
             clickAction="OPEN_APP"
@@ -571,14 +669,14 @@ export function Glance2x2Widget({
                 style={{
                   fontSize: 9.5,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.border,
+                  color: theme.textPrimary,
                 }}
               />
               <TextWidget
                 text="✿"
                 style={{
                   fontSize: 8,
-                  color: POCKET_COLORS.coral,
+                  color: theme.coral,
                 }}
               />
             </FlexWidget>
@@ -587,7 +685,7 @@ export function Glance2x2Widget({
               style={{
                 fontSize: 11,
                 fontWeight: "bold",
-                color: POCKET_COLORS.border,
+                color: theme.textPrimary,
               }}
             />
           </FlexWidget>
@@ -595,7 +693,8 @@ export function Glance2x2Widget({
           {/* Today's Spent Mini Card with Brutalist Shadow */}
           <FlexWidget
             style={{
-              backgroundColor: POCKET_COLORS.border,
+              width: "match_parent",
+              backgroundColor: theme.shadow,
               borderRadius: 12,
               paddingRight: 1.5,
               paddingBottom: 2,
@@ -606,8 +705,8 @@ export function Glance2x2Widget({
             <FlexWidget
               style={{
                 width: "match_parent",
-                backgroundColor: POCKET_COLORS.coralLight,
-                borderColor: POCKET_COLORS.border,
+                backgroundColor: theme.coralLight,
+                borderColor: theme.coralBorder,
                 borderWidth: 1.5,
                 borderRadius: 11,
                 paddingHorizontal: 8,
@@ -619,7 +718,7 @@ export function Glance2x2Widget({
                 style={{
                   fontSize: 7,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.coral,
+                  color: theme.coral,
                 }}
               />
               <TextWidget
@@ -627,7 +726,7 @@ export function Glance2x2Widget({
                 style={{
                   fontSize: 12,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.coral,
+                  color: theme.coral,
                   marginTop: 1,
                 }}
               />
@@ -637,6 +736,7 @@ export function Glance2x2Widget({
           {/* Recent Activity Card */}
           <FlexWidget
             style={{
+              width: "match_parent",
               flexDirection: "column",
               justifyContent: "center",
               marginVertical: 2,
@@ -648,8 +748,9 @@ export function Glance2x2Widget({
                 <FlexWidget
                   key={t.id}
                   style={{
-                    backgroundColor: POCKET_COLORS.bg,
-                    borderColor: POCKET_COLORS.border,
+                    width: "match_parent",
+                    backgroundColor: theme.bg,
+                    borderColor: theme.borderSubtle,
                     borderWidth: 1.5,
                     borderRadius: 11,
                     padding: 5,
@@ -662,8 +763,8 @@ export function Glance2x2Widget({
                       width: 22,
                       height: 22,
                       borderRadius: 6,
-                      backgroundColor: POCKET_COLORS.butter,
-                      borderColor: POCKET_COLORS.border,
+                      backgroundColor: theme.butter,
+                      borderColor: theme.butterBorder,
                       borderWidth: 1,
                       alignItems: "center",
                       justifyContent: "center",
@@ -682,7 +783,7 @@ export function Glance2x2Widget({
                       style={{
                         fontSize: 9.5,
                         fontWeight: "bold",
-                        color: POCKET_COLORS.border,
+                        color: theme.textPrimary,
                       }}
                       maxLines={1}
                       truncate="END"
@@ -692,7 +793,7 @@ export function Glance2x2Widget({
                       style={{
                         fontSize: 7,
                         fontWeight: "bold",
-                        color: POCKET_COLORS.muted,
+                        color: theme.textMuted,
                       }}
                       maxLines={1}
                     />
@@ -703,7 +804,7 @@ export function Glance2x2Widget({
                     style={{
                       fontSize: 10,
                       fontWeight: "bold",
-                      color: t.type === "income" ? POCKET_COLORS.success : POCKET_COLORS.coral,
+                      color: t.type === "income" ? theme.sage : theme.coral,
                       marginLeft: 4,
                     }}
                   />
@@ -714,7 +815,7 @@ export function Glance2x2Widget({
                 text="✿ No expenses yet today"
                 style={{
                   fontSize: 9,
-                  color: POCKET_COLORS.muted,
+                  color: theme.textMuted,
                   fontStyle: "italic",
                   textAlign: "center",
                 }}
@@ -725,7 +826,8 @@ export function Glance2x2Widget({
           {/* Bottom Action: Log Expense button with Brutalist Shadow */}
           <FlexWidget
             style={{
-              backgroundColor: POCKET_COLORS.border,
+              width: "match_parent",
+              backgroundColor: theme.shadow,
               borderRadius: 12,
               paddingRight: 1.5,
               paddingBottom: 2,
@@ -738,8 +840,8 @@ export function Glance2x2Widget({
               style={{
                 width: "match_parent",
                 height: 28,
-                backgroundColor: POCKET_COLORS.sage,
-                borderColor: POCKET_COLORS.border,
+                backgroundColor: theme.actionBtnBg,
+                borderColor: theme.actionBtnBorder,
                 borderWidth: 1.5,
                 borderRadius: 10,
                 alignItems: "center",
@@ -751,7 +853,7 @@ export function Glance2x2Widget({
                 style={{
                   fontSize: 10,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.border,
+                  color: theme.actionBtnText,
                 }}
               />
             </FlexWidget>
@@ -768,12 +870,15 @@ export function Glance2x2Widget({
  * - Left Pane: pocket journal ✿, Total Balance, Today's Spent mini card
  * - Right Pane: Recent Activity card with category emoji, and "+ Log Expense" button
  */
-export function Dashboard4x2Widget({
-  currencySymbol = DEFAULT_CURRENCY.symbol,
-  totalBalance = 0,
-  todaySpent = 0,
-  recentTxns = [],
-}: Partial<WidgetDataProps>) {
+export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
+  const {
+    currencySymbol = DEFAULT_CURRENCY.symbol,
+    totalBalance = 0,
+    todaySpent = 0,
+    recentTxns = [],
+  } = props;
+  const isDark = resolveIsDark(props.isDark);
+  const theme = getWidgetTheme(isDark);
   const displayTxns = recentTxns.slice(0, 1);
 
   return (
@@ -788,7 +893,7 @@ export function Dashboard4x2Widget({
         style={{
           height: "match_parent",
           width: "match_parent",
-          backgroundColor: POCKET_COLORS.border,
+          backgroundColor: theme.shadow,
           borderRadius: 26,
           paddingRight: 3,
           paddingBottom: 4.5,
@@ -798,9 +903,9 @@ export function Dashboard4x2Widget({
           style={{
             height: "match_parent",
             width: "match_parent",
-            backgroundColor: POCKET_COLORS.paper,
+            backgroundColor: theme.paper,
             borderRadius: 24,
-            borderColor: POCKET_COLORS.border,
+            borderColor: theme.border,
             borderWidth: 2,
             padding: 11,
             flexDirection: "row",
@@ -809,30 +914,30 @@ export function Dashboard4x2Widget({
           {/* Left Column (Balances & Stats) */}
           <FlexWidget
             style={{
-              width: 105,
+              width: 115,
               flexDirection: "column",
               borderRightWidth: 1.5,
-              borderColor: "#29221F18",
+              borderColor: theme.divider,
               paddingRight: 9,
               justifyContent: "space-between",
             }}
             clickAction="OPEN_APP"
           >
-            <FlexWidget style={{ flexDirection: "column" }}>
-              <FlexWidget style={{ flexDirection: "row", alignItems: "center" }}>
+            <FlexWidget style={{ width: "match_parent", flexDirection: "column" }}>
+              <FlexWidget style={{ width: "match_parent", flexDirection: "row", alignItems: "center" }}>
                 <TextWidget
                   text="pocket journal "
                   style={{
                     fontSize: 10,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.border,
+                    color: theme.textPrimary,
                   }}
                 />
                 <TextWidget
                   text="✿"
                   style={{
                     fontSize: 8.5,
-                    color: POCKET_COLORS.coral,
+                    color: theme.coral,
                   }}
                 />
               </FlexWidget>
@@ -842,7 +947,7 @@ export function Dashboard4x2Widget({
                 style={{
                   fontSize: 7.5,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.muted,
+                  color: theme.textMuted,
                   letterSpacing: 0.5,
                   marginTop: 3,
                 }}
@@ -853,7 +958,7 @@ export function Dashboard4x2Widget({
                 style={{
                   fontSize: 14,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.border,
+                  color: theme.textPrimary,
                   marginTop: 1,
                 }}
               />
@@ -862,7 +967,8 @@ export function Dashboard4x2Widget({
             {/* Today Spent Mini Card with Brutalist Shadow */}
             <FlexWidget
               style={{
-                backgroundColor: POCKET_COLORS.border,
+                width: "match_parent",
+                backgroundColor: theme.shadow,
                 borderRadius: 12,
                 paddingRight: 1.5,
                 paddingBottom: 2,
@@ -871,8 +977,8 @@ export function Dashboard4x2Widget({
               <FlexWidget
                 style={{
                   width: "match_parent",
-                  backgroundColor: POCKET_COLORS.coralLight,
-                  borderColor: POCKET_COLORS.border,
+                  backgroundColor: theme.coralLight,
+                  borderColor: theme.coralBorder,
                   borderWidth: 1.5,
                   borderRadius: 11,
                   padding: 6,
@@ -883,7 +989,7 @@ export function Dashboard4x2Widget({
                   style={{
                     fontSize: 7,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.coral,
+                    color: theme.coral,
                   }}
                 />
                 <TextWidget
@@ -891,7 +997,7 @@ export function Dashboard4x2Widget({
                   style={{
                     fontSize: 12,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.coral,
+                    color: theme.coral,
                     marginTop: 1,
                   }}
                 />
@@ -899,7 +1005,7 @@ export function Dashboard4x2Widget({
             </FlexWidget>
           </FlexWidget>
 
-          {/* Right Column (Recent Activity & Instant Action) */}
+          {/* Right Column (Recent Activity & Instant Action) with flex: 1 */}
           <FlexWidget
             style={{
               flex: 1,
@@ -911,6 +1017,7 @@ export function Dashboard4x2Widget({
             {/* Header row */}
             <FlexWidget
               style={{
+                width: "match_parent",
                 flexDirection: "row",
                 alignItems: "center",
               }}
@@ -922,7 +1029,7 @@ export function Dashboard4x2Widget({
                   style={{
                     fontSize: 7.5,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.muted,
+                    color: theme.textMuted,
                     letterSpacing: 0.5,
                   }}
                 />
@@ -931,7 +1038,7 @@ export function Dashboard4x2Widget({
                 text="✿"
                 style={{
                   fontSize: 8,
-                  color: POCKET_COLORS.subtle,
+                  color: theme.textSubtle,
                 }}
               />
             </FlexWidget>
@@ -939,6 +1046,7 @@ export function Dashboard4x2Widget({
             {/* Recent Activity Card */}
             <FlexWidget
               style={{
+                width: "match_parent",
                 flex: 1,
                 justifyContent: "center",
                 paddingVertical: 2,
@@ -950,8 +1058,9 @@ export function Dashboard4x2Widget({
                   <FlexWidget
                     key={t.id}
                     style={{
-                      backgroundColor: POCKET_COLORS.bg,
-                      borderColor: POCKET_COLORS.border,
+                      width: "match_parent",
+                      backgroundColor: theme.bg,
+                      borderColor: theme.borderSubtle,
                       borderWidth: 1.5,
                       borderRadius: 11,
                       padding: 6,
@@ -964,8 +1073,8 @@ export function Dashboard4x2Widget({
                         width: 24,
                         height: 24,
                         borderRadius: 7,
-                        backgroundColor: POCKET_COLORS.butter,
-                        borderColor: POCKET_COLORS.border,
+                        backgroundColor: theme.butter,
+                        borderColor: theme.butterBorder,
                         borderWidth: 1,
                         alignItems: "center",
                         justifyContent: "center",
@@ -984,7 +1093,7 @@ export function Dashboard4x2Widget({
                         style={{
                           fontSize: 9.5,
                           fontWeight: "bold",
-                          color: POCKET_COLORS.border,
+                          color: theme.textPrimary,
                         }}
                         maxLines={1}
                         truncate="END"
@@ -994,7 +1103,7 @@ export function Dashboard4x2Widget({
                         style={{
                           fontSize: 7,
                           fontWeight: "bold",
-                          color: POCKET_COLORS.muted,
+                          color: theme.textMuted,
                         }}
                       />
                     </FlexWidget>
@@ -1004,7 +1113,7 @@ export function Dashboard4x2Widget({
                       style={{
                         fontSize: 10.5,
                         fontWeight: "bold",
-                        color: t.type === "income" ? POCKET_COLORS.success : POCKET_COLORS.coral,
+                        color: t.type === "income" ? theme.sage : theme.coral,
                         marginLeft: 4,
                       }}
                     />
@@ -1013,8 +1122,9 @@ export function Dashboard4x2Widget({
               ) : (
                 <FlexWidget
                   style={{
-                    backgroundColor: POCKET_COLORS.bg,
-                    borderColor: POCKET_COLORS.border,
+                    width: "match_parent",
+                    backgroundColor: theme.bg,
+                    borderColor: theme.borderSubtle,
                     borderWidth: 1.5,
                     borderRadius: 11,
                     padding: 6,
@@ -1026,7 +1136,7 @@ export function Dashboard4x2Widget({
                     text="✿ No expenses recorded yet"
                     style={{
                       fontSize: 8.5,
-                      color: POCKET_COLORS.muted,
+                      color: theme.textMuted,
                       fontStyle: "italic",
                     }}
                   />
@@ -1037,7 +1147,8 @@ export function Dashboard4x2Widget({
             {/* Bottom Row Action Button with Brutalist Shadow */}
             <FlexWidget
               style={{
-                backgroundColor: POCKET_COLORS.border,
+                width: "match_parent",
+                backgroundColor: theme.shadow,
                 borderRadius: 13,
                 paddingRight: 2,
                 paddingBottom: 2.5,
@@ -1049,8 +1160,8 @@ export function Dashboard4x2Widget({
                 style={{
                   width: "match_parent",
                   height: 30,
-                  backgroundColor: POCKET_COLORS.sage,
-                  borderColor: POCKET_COLORS.border,
+                  backgroundColor: theme.actionBtnBg,
+                  borderColor: theme.actionBtnBorder,
                   borderWidth: 1.5,
                   borderRadius: 11,
                   alignItems: "center",
@@ -1063,7 +1174,7 @@ export function Dashboard4x2Widget({
                   style={{
                     fontSize: 10.5,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.border,
+                    color: theme.actionBtnText,
                   }}
                 />
               </FlexWidget>
@@ -1083,13 +1194,16 @@ export function Dashboard4x2Widget({
  * - Notebook Entries list with category emoji cards + interactive category shortcuts
  * - Bottom Action Row: Quick note or expense... + Instant tag
  */
-export function FullJournal4x4Widget({
-  currencySymbol = DEFAULT_CURRENCY.symbol,
-  totalBalance = 0,
-  todaySpent = 0,
-  todayIncome = 0,
-  recentTxns = [],
-}: Partial<WidgetDataProps>) {
+export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
+  const {
+    currencySymbol = DEFAULT_CURRENCY.symbol,
+    totalBalance = 0,
+    todaySpent = 0,
+    todayIncome = 0,
+    recentTxns = [],
+  } = props;
+  const isDark = resolveIsDark(props.isDark);
+  const theme = getWidgetTheme(isDark);
   const displayTxns = recentTxns.slice(0, 4);
 
   // Shortcuts to fill remaining slots so the notebook is always full, balanced, and interactive
@@ -1115,7 +1229,7 @@ export function FullJournal4x4Widget({
         style={{
           height: "match_parent",
           width: "match_parent",
-          backgroundColor: POCKET_COLORS.border,
+          backgroundColor: theme.shadow,
           borderRadius: 28,
           paddingRight: 3.5,
           paddingBottom: 5,
@@ -1126,9 +1240,9 @@ export function FullJournal4x4Widget({
           style={{
             height: "match_parent",
             width: "match_parent",
-            backgroundColor: POCKET_COLORS.paper,
+            backgroundColor: theme.paper,
             borderRadius: 26,
-            borderColor: POCKET_COLORS.border,
+            borderColor: theme.border,
             borderWidth: 2,
             padding: 12,
             flexDirection: "column",
@@ -1138,10 +1252,11 @@ export function FullJournal4x4Widget({
           {/* 1. Header: Name, date & sparkle */}
           <FlexWidget
             style={{
+              width: "match_parent",
               flexDirection: "row",
               alignItems: "center",
               borderBottomWidth: 1.5,
-              borderColor: "#29221F18",
+              borderColor: theme.divider,
               paddingBottom: 7,
             }}
             clickAction="OPEN_APP"
@@ -1153,14 +1268,14 @@ export function FullJournal4x4Widget({
                   style={{
                     fontSize: 12.5,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.border,
+                    color: theme.textPrimary,
                   }}
                 />
                 <TextWidget
                   text="✿"
                   style={{
                     fontSize: 9.5,
-                    color: POCKET_COLORS.coral,
+                    color: theme.coral,
                   }}
                 />
               </FlexWidget>
@@ -1169,7 +1284,7 @@ export function FullJournal4x4Widget({
                 style={{
                   fontSize: 7.5,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.muted,
+                  color: theme.textMuted,
                   letterSpacing: 0.5,
                   marginTop: 1,
                 }}
@@ -1179,8 +1294,8 @@ export function FullJournal4x4Widget({
             {/* Sparkle Tag */}
             <FlexWidget
               style={{
-                backgroundColor: POCKET_COLORS.butterLight,
-                borderColor: POCKET_COLORS.border,
+                backgroundColor: theme.butterLight,
+                borderColor: theme.butterBorder,
                 borderWidth: 1.5,
                 borderRadius: 10,
                 paddingHorizontal: 7,
@@ -1194,7 +1309,7 @@ export function FullJournal4x4Widget({
                 style={{
                   fontSize: 8.5,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.border,
+                  color: theme.tagButterText,
                 }}
               />
             </FlexWidget>
@@ -1203,6 +1318,7 @@ export function FullJournal4x4Widget({
           {/* 2. Metric split cards (Income & Spent) with Progress Bars */}
           <FlexWidget
             style={{
+              width: "match_parent",
               flexDirection: "row",
               alignItems: "center",
               marginVertical: 4,
@@ -1213,7 +1329,7 @@ export function FullJournal4x4Widget({
             <FlexWidget
               style={{
                 flex: 1,
-                backgroundColor: POCKET_COLORS.border,
+                backgroundColor: theme.shadow,
                 borderRadius: 13,
                 paddingRight: 1.5,
                 paddingBottom: 2,
@@ -1223,21 +1339,21 @@ export function FullJournal4x4Widget({
               <FlexWidget
                 style={{
                   width: "match_parent",
-                  backgroundColor: POCKET_COLORS.sageLight,
-                  borderColor: POCKET_COLORS.border,
+                  backgroundColor: theme.sageLight,
+                  borderColor: theme.sageBorder,
                   borderWidth: 1.5,
                   borderRadius: 12,
                   padding: 7,
                 }}
               >
-                <FlexWidget style={{ flexDirection: "row", alignItems: "center" }}>
+                <FlexWidget style={{ width: "match_parent", flexDirection: "row", alignItems: "center" }}>
                   <FlexWidget style={{ flex: 1 }}>
                     <TextWidget
                       text="↙ INCOME"
                       style={{
                         fontSize: 7.5,
                         fontWeight: "bold",
-                        color: POCKET_COLORS.success,
+                        color: theme.incomeText,
                         letterSpacing: 0.5,
                       }}
                     />
@@ -1249,15 +1365,16 @@ export function FullJournal4x4Widget({
                   style={{
                     fontSize: 12.5,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.success,
+                    color: theme.incomeText,
                     marginTop: 2,
                   }}
                 />
                 {/* Progress track */}
                 <FlexWidget
                   style={{
+                    width: "match_parent",
                     height: 3.5,
-                    backgroundColor: "#8FD3B450",
+                    backgroundColor: theme.trackIncomeBg,
                     borderRadius: 2,
                     marginTop: 4,
                   }}
@@ -1266,7 +1383,7 @@ export function FullJournal4x4Widget({
                     style={{
                       height: 3.5,
                       width: todayIncome > 0 ? 40 : 12,
-                      backgroundColor: POCKET_COLORS.sage,
+                      backgroundColor: theme.sage,
                       borderRadius: 2,
                     }}
                   />
@@ -1278,7 +1395,7 @@ export function FullJournal4x4Widget({
             <FlexWidget
               style={{
                 flex: 1,
-                backgroundColor: POCKET_COLORS.border,
+                backgroundColor: theme.shadow,
                 borderRadius: 13,
                 paddingRight: 1.5,
                 paddingBottom: 2,
@@ -1287,21 +1404,21 @@ export function FullJournal4x4Widget({
               <FlexWidget
                 style={{
                   width: "match_parent",
-                  backgroundColor: POCKET_COLORS.coralLight,
-                  borderColor: POCKET_COLORS.border,
+                  backgroundColor: theme.coralLight,
+                  borderColor: theme.coralBorder,
                   borderWidth: 1.5,
                   borderRadius: 12,
                   padding: 7,
                 }}
               >
-                <FlexWidget style={{ flexDirection: "row", alignItems: "center" }}>
+                <FlexWidget style={{ width: "match_parent", flexDirection: "row", alignItems: "center" }}>
                   <FlexWidget style={{ flex: 1 }}>
                     <TextWidget
                       text="↗ SPENT"
                       style={{
                         fontSize: 7.5,
                         fontWeight: "bold",
-                        color: POCKET_COLORS.coral,
+                        color: theme.coral,
                         letterSpacing: 0.5,
                       }}
                     />
@@ -1313,15 +1430,16 @@ export function FullJournal4x4Widget({
                   style={{
                     fontSize: 12.5,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.coral,
+                    color: theme.coral,
                     marginTop: 2,
                   }}
                 />
                 {/* Progress track */}
                 <FlexWidget
                   style={{
+                    width: "match_parent",
                     height: 3.5,
-                    backgroundColor: "#FF8A6540",
+                    backgroundColor: theme.trackSpentBg,
                     borderRadius: 2,
                     marginTop: 4,
                   }}
@@ -1330,7 +1448,7 @@ export function FullJournal4x4Widget({
                     style={{
                       height: 3.5,
                       width: todaySpent > 0 ? 55 : 12,
-                      backgroundColor: POCKET_COLORS.coral,
+                      backgroundColor: theme.coral,
                       borderRadius: 2,
                     }}
                   />
@@ -1339,9 +1457,10 @@ export function FullJournal4x4Widget({
             </FlexWidget>
           </FlexWidget>
 
-          {/* 3. Notebook Recent Entries List - evenly fills the vertical space */}
+          {/* 3. Notebook Recent Entries List - spans 100% width and evenly fills height */}
           <FlexWidget
             style={{
+              width: "match_parent",
               flex: 1,
               flexDirection: "column",
               justifyContent: "space-between",
@@ -1350,6 +1469,7 @@ export function FullJournal4x4Widget({
           >
             <FlexWidget
               style={{
+                width: "match_parent",
                 flexDirection: "row",
                 alignItems: "center",
                 marginBottom: 2,
@@ -1362,7 +1482,7 @@ export function FullJournal4x4Widget({
                   style={{
                     fontSize: 7.5,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.muted,
+                    color: theme.textMuted,
                     letterSpacing: 0.5,
                   }}
                 />
@@ -1372,7 +1492,7 @@ export function FullJournal4x4Widget({
                 style={{
                   fontSize: 7.5,
                   fontWeight: "bold",
-                  color: POCKET_COLORS.muted,
+                  color: theme.textMuted,
                 }}
               />
             </FlexWidget>
@@ -1382,8 +1502,9 @@ export function FullJournal4x4Widget({
               <FlexWidget
                 key={t.id}
                 style={{
-                  backgroundColor: POCKET_COLORS.bg,
-                  borderColor: POCKET_COLORS.border,
+                  width: "match_parent",
+                  backgroundColor: theme.bg,
+                  borderColor: theme.borderSubtle,
                   borderWidth: 1.5,
                   borderRadius: 11,
                   padding: 5.5,
@@ -1398,8 +1519,8 @@ export function FullJournal4x4Widget({
                     width: 26,
                     height: 26,
                     borderRadius: 7,
-                    backgroundColor: POCKET_COLORS.butter,
-                    borderColor: POCKET_COLORS.border,
+                    backgroundColor: theme.butter,
+                    borderColor: theme.butterBorder,
                     borderWidth: 1,
                     alignItems: "center",
                     justifyContent: "center",
@@ -1419,7 +1540,7 @@ export function FullJournal4x4Widget({
                     style={{
                       fontSize: 9.5,
                       fontWeight: "bold",
-                      color: POCKET_COLORS.border,
+                      color: theme.textPrimary,
                     }}
                     maxLines={1}
                     truncate="END"
@@ -1429,7 +1550,7 @@ export function FullJournal4x4Widget({
                     style={{
                       fontSize: 7,
                       fontWeight: "bold",
-                      color: POCKET_COLORS.muted,
+                      color: theme.textMuted,
                     }}
                   />
                 </FlexWidget>
@@ -1440,7 +1561,7 @@ export function FullJournal4x4Widget({
                   style={{
                     fontSize: 10,
                     fontWeight: "bold",
-                    color: t.type === "income" ? POCKET_COLORS.success : POCKET_COLORS.coral,
+                    color: t.type === "income" ? theme.sage : theme.coral,
                     marginLeft: 4,
                   }}
                 />
@@ -1452,8 +1573,9 @@ export function FullJournal4x4Widget({
               <FlexWidget
                 key={`slot-${idx}`}
                 style={{
-                  backgroundColor: POCKET_COLORS.bg,
-                  borderColor: "#29221F25",
+                  width: "match_parent",
+                  backgroundColor: theme.placeholderBg,
+                  borderColor: theme.placeholderBorder,
                   borderWidth: 1,
                   borderRadius: 11,
                   padding: 5,
@@ -1468,7 +1590,9 @@ export function FullJournal4x4Widget({
                     width: 24,
                     height: 24,
                     borderRadius: 7,
-                    backgroundColor: POCKET_COLORS.butterLight,
+                    backgroundColor: theme.butterLight,
+                    borderColor: theme.butterBorder,
+                    borderWidth: 1,
                     alignItems: "center",
                     justifyContent: "center",
                     marginRight: 6,
@@ -1483,7 +1607,7 @@ export function FullJournal4x4Widget({
                     style={{
                       fontSize: 8.5,
                       fontWeight: "bold",
-                      color: POCKET_COLORS.muted,
+                      color: theme.textMuted,
                     }}
                   />
                 </FlexWidget>
@@ -1493,7 +1617,7 @@ export function FullJournal4x4Widget({
                   style={{
                     fontSize: 8,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.border,
+                    color: theme.textPrimary,
                   }}
                 />
               </FlexWidget>
@@ -1503,7 +1627,8 @@ export function FullJournal4x4Widget({
           {/* 4. Bottom Action Row: Multi Quick Add Bar with Brutalist Shadow */}
           <FlexWidget
             style={{
-              backgroundColor: POCKET_COLORS.border,
+              width: "match_parent",
+              backgroundColor: theme.shadow,
               borderRadius: 13,
               paddingRight: 2,
               paddingBottom: 2.5,
@@ -1515,8 +1640,8 @@ export function FullJournal4x4Widget({
             <FlexWidget
               style={{
                 width: "match_parent",
-                backgroundColor: POCKET_COLORS.bg,
-                borderColor: POCKET_COLORS.border,
+                backgroundColor: theme.bg,
+                borderColor: theme.border,
                 borderWidth: 1.5,
                 borderRadius: 11,
                 paddingHorizontal: 9,
@@ -1530,7 +1655,7 @@ export function FullJournal4x4Widget({
                   width: 18,
                   height: 18,
                   borderRadius: 5,
-                  backgroundColor: POCKET_COLORS.coral,
+                  backgroundColor: theme.coral,
                   alignItems: "center",
                   justifyContent: "center",
                   marginRight: 7,
@@ -1553,15 +1678,15 @@ export function FullJournal4x4Widget({
                   style={{
                     fontSize: 9,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.muted,
+                    color: theme.textMuted,
                   }}
                 />
               </FlexWidget>
 
               <FlexWidget
                 style={{
-                  backgroundColor: POCKET_COLORS.paper,
-                  borderColor: POCKET_COLORS.border,
+                  backgroundColor: theme.instantPillBg,
+                  borderColor: theme.borderSubtle,
                   borderWidth: 1,
                   borderRadius: 5,
                   paddingHorizontal: 5,
@@ -1573,7 +1698,7 @@ export function FullJournal4x4Widget({
                   style={{
                     fontSize: 7.5,
                     fontWeight: "bold",
-                    color: POCKET_COLORS.subtle,
+                    color: theme.instantPillText,
                   }}
                 />
               </FlexWidget>

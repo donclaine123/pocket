@@ -47,6 +47,7 @@ export function UpdateModal({
   const [downloading, setDownloading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [readyToRestart, setReadyToRestart] = useState(false);
+  const [isRestarting, setIsRestarting] = useState(false);
   const [downloadedApkUri, setDownloadedApkUri] = useState<string | null>(null);
 
   const handleStartUpdate = async () => {
@@ -64,8 +65,11 @@ export function UpdateModal({
       if (fileUri) {
         setDownloadedApkUri(fileUri);
         safeHaptic.success();
-        // Immediately trigger package installer
-        await installDownloadedApk(fileUri);
+        // Cleanly dismiss modal before launching Android system package installer
+        onClose();
+        setTimeout(async () => {
+          await installDownloadedApk(fileUri);
+        }, 350);
       }
     } else {
       // 2. Over-The-Air JavaScript Update
@@ -84,14 +88,21 @@ export function UpdateModal({
   const handleInstallApkAgain = async () => {
     if (downloadedApkUri) {
       safeHaptic.selection();
-      await installDownloadedApk(downloadedApkUri);
+      onClose();
+      setTimeout(async () => {
+        await installDownloadedApk(downloadedApkUri);
+      }, 350);
     }
   };
 
   const handleRestart = async () => {
     safeHaptic.success();
-    await applyUpdateAndRestart();
+    setIsRestarting(true);
+    // Dismiss modal first to unmount native Android Dialog DecorView, preventing WindowLeaked crashes
     onClose();
+    setTimeout(async () => {
+      await applyUpdateAndRestart();
+    }, 400);
   };
 
   const isApk = updateType === "apk";

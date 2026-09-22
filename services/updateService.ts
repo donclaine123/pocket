@@ -243,6 +243,8 @@ export async function applyUpdateAndRestart(): Promise<void> {
   }
 
   try {
+    // Give Android WindowManager a clean moment to finish dismissing any open dialogs
+    await new Promise((resolve) => setTimeout(resolve, 250));
     await Updates.reloadAsync();
   } catch (error) {
     console.error("[UpdateService] Reload error:", error);

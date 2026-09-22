@@ -33,11 +33,18 @@ jobs:
       - name: 📦 Install EAS CLI
         run: npm install -g eas-cli
 
+      - name: 🔐 Pull EAS Environment Variables from Expo Dashboard
+        env:
+          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
+        run: |
+          eas env:pull preview --path .env --non-interactive || eas env:pull production --path .env --non-interactive || true
+
       - name: 🚀 Publish EAS OTA Update to Preview & Production Channels
         env:
           EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           echo "Publishing OTA update to preview channel..."
-          eas update --channel preview --message "${{ github.event.head_commit.message || 'OTA Update' }}" --non-interactive
+          eas update --channel preview --environment preview --message "${{ github.event.head_commit.message || 'OTA Update' }}" --non-interactive
           echo "Publishing OTA update to production channel..."
-          eas update --channel production --message "${{ github.event.head_commit.message || 'OTA Update' }}" --non-interactive
+          eas update --channel production --environment production --message "${{ github.event.head_commit.message || 'OTA Update' }}" --non-interactive
+

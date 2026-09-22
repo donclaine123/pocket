@@ -14,6 +14,7 @@ import {
 import { Txn, CategoryKey } from "../types/transaction";
 import { toISODate } from "./dateUtils";
 import { DEFAULT_CURRENCY } from "../constants/currencies";
+import { isSupabaseConfigured, supabase } from "../database/supabase";
 
 export const WIDGET_DATA_STORAGE_KEY = "@pocket_widget_data";
 const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
@@ -224,10 +225,20 @@ export async function logPresetTransactionFromWidget(
     date: new Date().toISOString(),
   };
 
+  // Check if a user is signed in to mirror transaction to their account and Supabase cloud
+  let userId: string | null = null;
+  if (isSupabaseConfigured) {
+    try {
+      const { data } = await supabase.auth.getUser();
+      userId = data?.user?.id || null;
+    } catch {}
+  }
+
   // Find storage key to update
+  const userKey = userId ? `@pocket_user_${userId}` : null;
   let currentTxns: Txn[] = [];
   try {
-    const raw = await AsyncStorage.getItem(GUEST_STORAGE_KEY);
+    const raw = await AsyncStorage.getItem(userKey || GUEST_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed)) currentTxns = parsed;
@@ -236,11 +247,30 @@ export async function logPresetTransactionFromWidget(
 
   const updatedTxns = [newTxn, ...currentTxns];
   try {
-    await AsyncStorage.setItem(
-      GUEST_STORAGE_KEY,
-      JSON.stringify(updatedTxns)
-    );
-  } catch {}
+    // Save to user storage if signed in
+    if (userKey) {
+      await AsyncStorage.setItem(userKey, JSON.stringify(updatedTxns));
+    }
+    // Also save to guest key as mirror
+    await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(updatedTxns));
+
+    // Upload directly to Supabase cloud if signed in
+    if (userId && isSupabaseConfigured) {
+      await supabase.from("transactions").upsert([
+        {
+          id: newTxn.id,
+          user_id: userId,
+          type: newTxn.type,
+          amount: newTxn.amount,
+          category: newTxn.category,
+          note: newTxn.note,
+          date: newTxn.date,
+        },
+      ], { onConflict: "id" });
+    }
+  } catch (err) {
+    console.warn("[WidgetSync] Error persisting preset txn:", err);
+  }
 
   // Recalculate metrics
   let currencySymbol = DEFAULT_CURRENCY.symbol;

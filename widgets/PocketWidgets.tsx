@@ -914,6 +914,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
           {/* Left Column (Balances & Stats) */}
           <FlexWidget
             style={{
+              height: "match_parent",
               width: 115,
               flexDirection: "column",
               borderRightWidth: 1.5,
@@ -1008,6 +1009,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
           {/* Right Column (Recent Activity & Instant Action) with flex: 1 */}
           <FlexWidget
             style={{
+              height: "match_parent",
               flex: 1,
               flexDirection: "column",
               paddingLeft: 9,

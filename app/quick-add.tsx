@@ -30,6 +30,7 @@ import {
   saveTransactions,
 } from "../services/storage";
 import { refreshAllWidgets } from "../services/widgetSync";
+import { toISODate } from "../services/dateUtils";
 
 export default function QuickAddScreen() {
   const { fromWidget } = useLocalSearchParams<{ fromWidget?: string }>();
@@ -146,7 +147,7 @@ export default function QuickAddScreen() {
         amount: numericAmount,
         category,
         note: note.trim(),
-        date: new Date().toISOString(),
+        date: toISODate(new Date()),
       };
 
       await saveTransactions([newTxn, ...existing]);

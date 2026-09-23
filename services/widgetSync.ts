@@ -223,7 +223,7 @@ export async function logPresetTransactionFromWidget(
     amount,
     category: category as CategoryKey,
     note,
-    date: new Date().toISOString(),
+    date: toISODate(new Date()),
   };
 
   // Check if a user is signed in to mirror transaction to their account and Supabase cloud

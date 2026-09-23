@@ -129,19 +129,21 @@ export function getMonthRange(offsetMonths = 0): DateRange {
 }
 
 export function isDateInRange(dateStr: string, range: DateRange): boolean {
-  return dateStr >= range.start && dateStr <= range.end;
+  const cleanDate = dateStr.slice(0, 10);
+  return cleanDate >= range.start && cleanDate <= range.end;
 }
 
 export function formatFriendlyDate(iso: string): string {
+  const cleanDate = iso.slice(0, 10);
   const today = toISODate(new Date());
   const yesterdayDate = new Date();
   yesterdayDate.setDate(yesterdayDate.getDate() - 1);
   const yesterday = toISODate(yesterdayDate);
 
-  if (iso === today) return "Today";
-  if (iso === yesterday) return "Yesterday";
+  if (cleanDate === today) return "Today";
+  if (cleanDate === yesterday) return "Yesterday";
 
-  const d = parseISODate(iso);
+  const d = parseISODate(cleanDate);
   return d.toLocaleDateString("en-US", {
     weekday: "short",
     month: "short",
@@ -159,10 +161,11 @@ export function groupTransactionsByDate(
   const groups: Record<string, Txn[]> = {};
 
   for (const t of txns) {
-    if (!groups[t.date]) {
-      groups[t.date] = [];
+    const dayKey = t.date.slice(0, 10);
+    if (!groups[dayKey]) {
+      groups[dayKey] = [];
     }
-    groups[t.date].push(t);
+    groups[dayKey].push(t);
   }
 
   const sortedDates = Object.keys(groups).sort((a, b) => {

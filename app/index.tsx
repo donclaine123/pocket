@@ -61,7 +61,7 @@ import { CloudSyncModal } from "../components/CloudSyncModal";
 import { UpdateModal } from "../components/UpdateModal";
 import { supabase } from "../database/supabase";
 import { FlashList } from "@shopify/flash-list";
-import { checkForAppUpdate, APP_VERSION } from "../services/updateService";
+import { checkForAppUpdate, APP_VERSION, UpdateCheckResult } from "../services/updateService";
 import {
   MonthArchive,
   TimeframeMode,
@@ -231,6 +231,7 @@ export default function HomeScreen() {
 
   // In-App OTA Auto-Update State (Zero Data Loss)
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+  const [updateInfo, setUpdateInfo] = useState<UpdateCheckResult | null>(null);
   const currentVersion = APP_VERSION;
 
   // Me Tab Sub-Page Navigation State
@@ -266,6 +267,7 @@ export default function HomeScreen() {
     try {
       const res = await checkForAppUpdate();
       setCheckingUpdate(false);
+      setUpdateInfo(res);
 
       if (res && res.isAvailable) {
         setShowUpdateModal(true);
@@ -319,6 +321,7 @@ export default function HomeScreen() {
     checkForAppUpdate()
       .then((res) => {
         if (res && res.isAvailable) {
+          setUpdateInfo(res);
           setShowUpdateModal(true);
         }
       })
@@ -3498,6 +3501,10 @@ export default function HomeScreen() {
       <UpdateModal
         visible={showUpdateModal}
         onClose={() => setShowUpdateModal(false)}
+        newVersion={updateInfo?.version || currentVersion}
+        updateType={updateInfo?.updateType || (updateInfo?.apkDownloadUrl ? "apk" : "ota")}
+        apkDownloadUrl={updateInfo?.apkDownloadUrl}
+        releaseNotes={updateInfo?.releaseNotes}
       />
 
 

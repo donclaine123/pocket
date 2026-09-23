@@ -55,7 +55,8 @@ export function UpdateModal({
     setDownloading(true);
     setProgress(0);
 
-    if (updateType === "apk" && apkDownloadUrl) {
+    const shouldDownloadApk = updateType === "apk" || Boolean(apkDownloadUrl);
+    if (shouldDownloadApk && apkDownloadUrl) {
       // 1. In-App APK Download & Install
       const fileUri = await downloadApkWithProgress(apkDownloadUrl, (ratio) => {
         setProgress(ratio);
@@ -105,7 +106,7 @@ export function UpdateModal({
     }, 400);
   };
 
-  const isApk = updateType === "apk";
+  const isApk = updateType === "apk" || Boolean(apkDownloadUrl);
 
   return (
     <Modal

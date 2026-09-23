@@ -130,39 +130,19 @@ export async function loadTransactions(): Promise<Txn[]> {
       }
     }
 
-    // 2. Checks local SQLite database via PowerSync if available
-    const db = await initPowerSync();
-    if (db) {
-      const rows = await db.getAll(
-        "SELECT id, type, amount, category, note, date FROM transactions ORDER BY date DESC, created_at DESC"
-      );
-
-      if (rows && rows.length > 0) {
-        const sqliteTxns: Txn[] = rows.map((r: any) => ({
-          id: r.id,
-          type: r.type,
-          amount: Number(r.amount),
-          category: r.category,
-          note: r.note || "",
-          date: r.date,
-        }));
-        await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(sqliteTxns));
-        return sqliteTxns;
-      }
-    }
-
-    // 3. User-scoped or guest local cache
+    // 2. Read local AsyncStorage cache first (preserves widget entries and offline guest data)
     const key = getStorageKey(userId);
-    const raw = await AsyncStorage.getItem(key);
-    if (raw) {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        return parsed;
+    let cachedTxns: Txn[] = [];
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) cachedTxns = parsed;
       }
-    }
+    } catch {}
 
-    // 4. In guest mode (signed out), if guest key is empty, preserve history from existing user cache
-    if (!userId) {
+    // In guest mode, if current key is empty, check other user caches
+    if (!userId && cachedTxns.length === 0) {
       try {
         const allKeys = await AsyncStorage.getAllKeys();
         const userKeys = allKeys.filter((k) => k.startsWith("@pocket_user_"));
@@ -171,12 +151,50 @@ export async function loadTransactions(): Promise<Txn[]> {
           if (uRaw) {
             const parsed = JSON.parse(uRaw);
             if (Array.isArray(parsed) && parsed.length > 0) {
-              await AsyncStorage.setItem(GUEST_STORAGE_KEY, uRaw);
-              return parsed;
+              cachedTxns = parsed;
+              break;
             }
           }
         }
       } catch {}
+    }
+
+    // 3. Checks local SQLite database via PowerSync if available
+    let sqliteTxns: Txn[] = [];
+    try {
+      const db = await initPowerSync();
+      if (db) {
+        const rows = await db.getAll(
+          "SELECT id, type, amount, category, note, date FROM transactions ORDER BY date DESC, created_at DESC"
+        );
+        if (rows && rows.length > 0) {
+          sqliteTxns = rows.map((r: any) => ({
+            id: r.id,
+            type: r.type,
+            amount: Number(r.amount),
+            category: r.category,
+            note: r.note || "",
+            date: r.date,
+          }));
+        }
+      }
+    } catch {}
+
+    // 4. Merge cached transactions and SQLite transactions (never overwrite or lose widget entries!)
+    if (cachedTxns.length > 0 || sqliteTxns.length > 0) {
+      const txnMap = new Map<string, Txn>();
+      // Insert SQLite transactions first
+      for (const t of sqliteTxns) txnMap.set(t.id, t);
+      // Let cached transactions take precedence and add new items (including widget entries)
+      for (const t of cachedTxns) txnMap.set(t.id, t);
+
+      const merged = Array.from(txnMap.values()).sort(
+        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
+      );
+
+      // Keep storage in sync
+      await AsyncStorage.setItem(key, JSON.stringify(merged));
+      return merged;
     }
 
     return [];

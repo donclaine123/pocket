@@ -15,6 +15,7 @@ import { Txn, CategoryKey } from "../types/transaction";
 import { toISODate } from "./dateUtils";
 import { DEFAULT_CURRENCY } from "../constants/currencies";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
+import { getPowerSyncDb } from "../database/powersync";
 
 export const WIDGET_DATA_STORAGE_KEY = "@pocket_widget_data";
 const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
@@ -253,6 +254,25 @@ export async function logPresetTransactionFromWidget(
     }
     // Also save to guest key as mirror
     await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(updatedTxns));
+
+    // Also persist to local SQLite if active
+    try {
+      const db = getPowerSyncDb();
+      if (db) {
+        await db.execute(
+          `INSERT INTO transactions (id, type, amount, category, note, date, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(id) DO UPDATE SET
+             type = excluded.type,
+             amount = excluded.amount,
+             category = excluded.category,
+             note = excluded.note,
+             date = excluded.date,
+             updated_at = excluded.updated_at`,
+          [newTxn.id, newTxn.type, newTxn.amount, newTxn.category, newTxn.note, newTxn.date, new Date().toISOString()]
+        );
+      }
+    } catch {}
 
     // Upload directly to Supabase cloud if signed in
     if (userId && isSupabaseConfigured) {

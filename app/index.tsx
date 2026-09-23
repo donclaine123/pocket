@@ -691,6 +691,25 @@ export default function HomeScreen() {
     };
   }, [scopedTxns]);
 
+  // All-time totals for Piggy Bank (independent of active day/week/month period filter)
+  const allTimeTotals = useMemo(() => {
+    let income = 0;
+    let spent = 0;
+    for (const t of displayTxns) {
+      if (t.type === "income") income += t.amount;
+      else spent += t.amount;
+    }
+    const netSavings = income - spent;
+    const savingsRate = income > 0 ? Math.round((Math.max(0, netSavings) / income) * 100) : 0;
+    return {
+      income,
+      spent,
+      netSavings,
+      savingsRate,
+      isPositive: netSavings >= 0,
+    };
+  }, [displayTxns]);
+
   // Category counts and totals for tag navigation (within scoped transactions)
   const categoryStats = useMemo(() => {
     const stats: Record<string, { count: number; totalSpent: number }> = {};
@@ -2162,11 +2181,11 @@ export default function HomeScreen() {
     );
   };
 
-  // Piggy Tab Component
+  // Piggy Tab Component - All-time Net Savings
   const renderPiggyTab = () => {
-    const netSavings = scopedTotals.income - scopedTotals.spent;
-    const isPositive = netSavings >= 0;
-    const savingsRate = scopedTotals.income > 0 ? Math.round((Math.max(0, netSavings) / scopedTotals.income) * 100) : 0;
+    const netSavings = allTimeTotals.netSavings;
+    const isPositive = allTimeTotals.isPositive;
+    const savingsRate = allTimeTotals.savingsRate;
 
     return (
       <ScrollView
@@ -2191,7 +2210,7 @@ export default function HomeScreen() {
           style={[styles.heroCardContent, { marginBottom: 16 }]}
         >
           <View style={styles.cardTopRow}>
-            <Text style={styles.cardEyebrow}>NET SAVINGS THIS PERIOD</Text>
+            <Text style={styles.cardEyebrow}>ALL-TIME NET SAVINGS</Text>
             <View style={[styles.sparkleBadge, { backgroundColor: isPositive ? "#D4F0E3" : "#FFE0D6" }]}>
               <Text style={styles.sparkleText}>{isPositive ? "healthy ✿" : "deficit ✿"}</Text>
             </View>

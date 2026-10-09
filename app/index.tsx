@@ -66,8 +66,11 @@ import {
   MonthArchive,
   TimeframeMode,
   buildMonthArchives,
+  formatManilaTime,
   getDayRange,
   getMonthRange,
+  getTxnManilaTime,
+  getTxnTimestamp,
   getWeekRange,
   groupTransactionsByDate,
   isDateInRange,
@@ -101,6 +104,7 @@ import {
   Txn,
   TxnType,
 } from "../types/transaction";
+import { getCategoryColor, CATEGORY_COLORS } from "../constants/categoryColors";
 
 function uid(): string {
   return Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
@@ -128,19 +132,7 @@ function getYesterdayISO(): string {
   return toISODate(d);
 }
 
-function getCategoryColor(bg: Category["bg"]) {
-  switch (bg) {
-    case "peach":
-      return { bg: COLORS.peach, text: COLORS.cream };
-    case "mint":
-      return { bg: COLORS.mint, text: COLORS.ink };
-    case "lavender":
-      return { bg: COLORS.lavender, text: COLORS.ink };
-    case "butter":
-    default:
-      return { bg: COLORS.butter, text: COLORS.ink };
-  }
-}
+
 
 function formatShortDate(dateStr: string): string {
   try {
@@ -911,6 +903,25 @@ export default function HomeScreen() {
       ALL_CATEGORIES.find((c) => c.key === formCategory) ?? CATEGORIES[0];
     const finalNote = formNote.trim() || selectedCat.label;
 
+    const now = new Date();
+    let targetCreatedAt: string;
+    if (editingTxnId) {
+      const existing = txns.find((x) => x.id === editingTxnId);
+      targetCreatedAt = existing?.createdAt || now.toISOString();
+    } else {
+      if (formDate === toISODate(now)) {
+        targetCreatedAt = now.toISOString();
+      } else {
+        const parts = formDate.split("-").map((p) => parseInt(p, 10));
+        if (parts.length === 3) {
+          const d = new Date(parts[0], parts[1] - 1, parts[2], now.getHours(), now.getMinutes(), now.getSeconds());
+          targetCreatedAt = d.toISOString();
+        } else {
+          targetCreatedAt = now.toISOString();
+        }
+      }
+    }
+
     if (editingTxnId) {
       setTxns((prev) =>
         prev.map((t) =>
@@ -922,6 +933,7 @@ export default function HomeScreen() {
                 category: formCategory,
                 note: finalNote,
                 date: formDate,
+                createdAt: targetCreatedAt,
                 originalCurrency: currency.code,
               }
             : t
@@ -936,6 +948,7 @@ export default function HomeScreen() {
         category: formCategory,
         note: finalNote,
         date: formDate,
+        createdAt: targetCreatedAt,
         originalCurrency: currency.code,
       };
       setTxns((prev) => [newTxn, ...prev]);
@@ -1100,7 +1113,8 @@ export default function HomeScreen() {
 
     const t = item.txn;
     const cat = ALL_CATEGORIES.find((c) => c.key === t.category) ?? CATEGORIES[0];
-    const col = getCategoryColor(cat.bg);
+    const col = getCategoryColor(t.category);
+    const timeStr = getTxnManilaTime(t);
     const isIncome = t.type === "income";
 
     return (
@@ -1112,7 +1126,7 @@ export default function HomeScreen() {
         borderRadius={18}
         style={styles.txnCard}
       >
-        {/* Category Sticker Tag */}
+        {/* Category Sticker Tag with Unique Color */}
         <Pressable
           hitSlop={8}
           onPress={() => {
@@ -1122,7 +1136,8 @@ export default function HomeScreen() {
           style={[
             styles.txnIconBox,
             {
-              backgroundColor: col.bg,
+              backgroundColor: col.color,
+              borderColor: col.pillBorder,
               transform: [{ rotate: cat.rotate as any }],
             },
           ]}
@@ -1130,7 +1145,7 @@ export default function HomeScreen() {
           <Text style={styles.txnEmoji}>{cat.emoji}</Text>
         </Pressable>
 
-        {/* Note and Category */}
+        {/* Note, Unique Color Category Tag Badge, and Manila Time AM/PM */}
         <View style={styles.txnInfo}>
           <View style={styles.noteRow}>
             <Text numberOfLines={1} style={styles.txnNote}>
@@ -1138,7 +1153,37 @@ export default function HomeScreen() {
             </Text>
             <Edit2 size={12} color={COLORS.inkSoft} style={{ marginLeft: 4 }} />
           </View>
-          <Text style={styles.txnMeta}>{cat.label}</Text>
+          <View style={styles.txnMetaRow}>
+            <View
+              style={[
+                styles.categoryTagBadge,
+                {
+                  backgroundColor: col.pillBg,
+                  borderColor: col.pillBorder,
+                },
+              ]}
+            >
+              <View style={[styles.categoryDot, { backgroundColor: col.color }]} />
+              <Text
+                numberOfLines={1}
+                style={[styles.categoryTagBadgeText, { color: col.pillText }]}
+              >
+                {cat.label}
+              </Text>
+            </View>
+
+            {timeStr ? (
+              <View style={styles.txnTimeRow}>
+                <Clock
+                  size={10.5}
+                  color={COLORS.inkSoft}
+                  strokeWidth={2.2}
+                  style={{ marginRight: 3 }}
+                />
+                <Text style={styles.txnTimeText}>{timeStr}</Text>
+              </View>
+            ) : null}
+          </View>
         </View>
 
         {/* Amount and Delete Action */}
@@ -1676,7 +1721,7 @@ export default function HomeScreen() {
             : CATEGORIES
           ).map((c) => {
             const active = selectedTag === c.key;
-            const col = getCategoryColor(c.bg);
+            const col = getCategoryColor(c.key);
             const count = categoryStats[c.key]?.count || 0;
 
             return (
@@ -1689,9 +1734,9 @@ export default function HomeScreen() {
                 style={[
                   STYLES.chip,
                   {
-                    backgroundColor: active ? col.bg : COLORS.cream,
-                    borderColor: active ? COLORS.ink : "rgba(59, 51, 48, 0.2)",
-                    borderWidth: active ? 1.5 : 1,
+                    backgroundColor: active ? col.color : col.pillBg,
+                    borderColor: active ? COLORS.ink : col.pillBorder,
+                    borderWidth: active ? 1.8 : 1,
                     marginRight: 8,
                   },
                 ]}
@@ -1699,7 +1744,8 @@ export default function HomeScreen() {
                 <Text
                   style={[
                     styles.chipText,
-                    active && col.bg === "peach" && { color: COLORS.cream },
+                    { color: active ? col.contrastText : col.pillText },
+                    active && { fontFamily: FONTS.bodyBold },
                   ]}
                 >
                   {c.emoji} {c.label} {count > 0 ? `(${count})` : ""}
@@ -1877,7 +1923,7 @@ export default function HomeScreen() {
       amount: item.amount,
       count: item.count,
       percentage: item.percentage,
-      color: getCategorySliceColor(idx, item.bg),
+      color: getCategorySliceColor(idx, item.key || item.bg),
       bg: item.bg,
     }));
   }, [categoryExpenseBreakdown]);
@@ -2074,10 +2120,14 @@ export default function HomeScreen() {
             </View>
 
             {categoryExpenseBreakdown.map((item, idx) => {
-              const sliceColor = getCategorySliceColor(idx, item.bg);
+              const sliceColor = getCategorySliceColor(idx, item.key || item.bg);
               const isSelected = selectedInsightCategory === item.key;
               const isExpanded = expandedInsightCategory === item.key;
-              const catTxns = isExpanded ? (scopedTxns || []).filter((t) => t.type === "expense" && t.category === item.key) : [];
+              const catTxns = isExpanded
+                ? (scopedTxns || [])
+                    .filter((t) => t.type === "expense" && t.category === item.key)
+                    .sort((a, b) => getTxnTimestamp(b) - getTxnTimestamp(a))
+                : [];
 
               return (
                 <View key={item.key} style={{ marginBottom: 10 }}>
@@ -2161,6 +2211,7 @@ export default function HomeScreen() {
                                 </Text>
                                 <Text style={styles.insightDrilldownDate}>
                                   {formatShortDate(t.date)}
+                                  {getTxnManilaTime(t) ? ` · ${getTxnManilaTime(t)}` : ""}
                                 </Text>
                               </View>
                               <View style={{ flexDirection: "row", alignItems: "center" }}>
@@ -3237,7 +3288,7 @@ export default function HomeScreen() {
             <View style={styles.categoryWrap}>
               {(formType === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => {
                 const active = formCategory === c.key;
-                const col = getCategoryColor(c.bg);
+                const col = getCategoryColor(c.key);
                 return (
                   <Pressable
                     key={c.key}
@@ -3248,15 +3299,17 @@ export default function HomeScreen() {
                     style={[
                       styles.modalCategoryChip,
                       {
-                        backgroundColor: active ? col.bg : COLORS.paper,
-                        borderColor: COLORS.cardBorder,
+                        backgroundColor: active ? col.color : col.pillBg,
+                        borderColor: active ? COLORS.ink : col.pillBorder,
+                        borderWidth: active ? 2 : 1,
                       },
                     ]}
                   >
                     <Text
                       style={[
                         styles.modalCategoryChipText,
-                        { color: active ? col.text : COLORS.ink },
+                        { color: active ? col.contrastText : col.pillText },
+                        active && { fontFamily: FONTS.displayBold },
                       ]}
                     >
                       {c.emoji} {c.label}
@@ -3278,7 +3331,15 @@ export default function HomeScreen() {
 
             {/* Quick Date Selection & Custom ISO input */}
             <View style={styles.datePickerRow}>
-              <Text style={styles.fieldLabel}>Date: {formDate}</Text>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <Text style={styles.fieldLabel}>Date: {formDate}</Text>
+                <View style={{ flexDirection: "row", alignItems: "center" }}>
+                  <Clock size={11} color={COLORS.inkSoft} style={{ marginRight: 3 }} />
+                  <Text style={{ fontFamily: FONTS.bodyMedium, fontSize: 11, color: COLORS.inkSoft }}>
+                    {formatManilaTime(new Date())} Manila
+                  </Text>
+                </View>
+              </View>
               <View style={styles.dateChipsRow}>
                 <Pressable
                   onPress={() => {
@@ -4162,6 +4223,40 @@ const styles = StyleSheet.create({
     fontSize: 10.5,
     color: COLORS.inkSoft,
     marginTop: 2,
+  },
+  txnMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+    flexWrap: "wrap",
+    gap: 6,
+  },
+  categoryTagBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 9999,
+    borderWidth: 1,
+  },
+  categoryDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  categoryTagBadgeText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 10,
+  },
+  txnTimeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  txnTimeText: {
+    fontFamily: FONTS.bodyMedium,
+    fontSize: 10,
+    color: COLORS.inkSoft,
   },
   txnRight: {
     alignItems: "flex-end",

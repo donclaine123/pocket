@@ -23,6 +23,7 @@ import {
   Txn,
   TxnType,
 } from "../types/transaction";
+import { getCategoryColor } from "../constants/categoryColors";
 import { CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
 import {
   loadSavedCurrency,
@@ -141,13 +142,15 @@ export default function QuickAddScreen() {
 
     try {
       const existing = await loadTransactions();
+      const now = new Date();
       const newTxn: Txn = {
-        id: `qa_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        id: `qa_${now.getTime()}_${Math.random().toString(36).slice(2, 7)}`,
         type,
         amount: numericAmount,
         category,
         note: note.trim(),
-        date: toISODate(new Date()),
+        date: toISODate(now),
+        createdAt: now.toISOString(),
       };
 
       await saveTransactions([newTxn, ...existing]);
@@ -278,6 +281,7 @@ export default function QuickAddScreen() {
         >
           {categories.map((c) => {
             const isSelected = category === c.key;
+            const col = getCategoryColor(c.key);
             return (
               <Pressable
                 key={c.key}
@@ -287,14 +291,21 @@ export default function QuickAddScreen() {
                 }}
                 style={[
                   styles.categoryChip,
-                  isSelected && styles.categoryChipSelected,
+                  {
+                    backgroundColor: isSelected ? col.color : col.pillBg,
+                    borderColor: isSelected ? COLORS.ink : col.pillBorder,
+                    borderWidth: isSelected ? 2 : 1,
+                  },
                 ]}
               >
                 <Text style={styles.categoryEmoji}>{c.emoji}</Text>
                 <Text
                   style={[
                     styles.categoryText,
-                    isSelected && styles.categoryTextSelected,
+                    {
+                      color: isSelected ? col.contrastText : col.pillText,
+                    },
+                    isSelected && { fontFamily: FONTS.bodyBold },
                   ]}
                 >
                   {c.label}

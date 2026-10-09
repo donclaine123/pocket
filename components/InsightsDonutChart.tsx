@@ -2,6 +2,7 @@ import React from "react";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 import Svg, { Circle, G } from "react-native-svg";
 import { COLORS, FONTS } from "../constants/theme";
+import { getCategoryColor } from "../constants/categoryColors";
 
 export interface CategoryBreakdownItem {
   key: string;
@@ -29,23 +30,29 @@ export interface InsightsDonutChartProps {
 }
 
 const PALETTE = [
-  "#FF9E7E", // peach
-  "#92D8B9", // mint
-  "#F7C56B", // butter
-  "#B7A6E4", // lavender
-  "#8AC6FD", // sky
-  "#FF9EB7", // rose
-  "#FFA578", // coral
-  "#A6D997", // sage
-  "#9DA7F5", // periwinkle
-  "#F5B971", // warm amber
+  "#F59E0B", // amber
+  "#10B981", // emerald
+  "#0EA5E9", // sky
+  "#2563EB", // royal cobalt blue
+  "#D946EF", // fuchsia
+  "#8B5CF6", // purple
+  "#06B6D4", // cyan
+  "#EF4444", // red
+  "#64748B", // slate
+  "#059669", // dark green
+  "#6366F1", // indigo
+  "#EC4899", // pink
+  "#EAB308", // gold
+  "#84CC16", // lime
+  "#F97316", // orange
+  "#A855F7", // violet
 ];
 
-export function getCategorySliceColor(index: number, bg?: string): string {
-  if (bg === "peach") return "#FF9E7E";
-  if (bg === "mint") return "#78D3AB";
-  if (bg === "butter") return "#F7C56B";
-  if (bg === "lavender") return "#B7A6E4";
+export function getCategorySliceColor(index: number, bgOrKey?: string): string {
+  if (bgOrKey) {
+    const col = getCategoryColor(bgOrKey);
+    if (col && col.color) return col.color;
+  }
   return PALETTE[index % PALETTE.length];
 }
 

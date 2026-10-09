@@ -217,13 +217,15 @@ export async function logPresetTransactionFromWidget(
   category: string,
   note: string
 ): Promise<WidgetDataProps> {
+  const now = new Date();
   const newTxn: Txn = {
-    id: `w_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    id: `w_${now.getTime()}_${Math.random().toString(36).slice(2, 7)}`,
     type: "expense",
     amount,
     category: category as CategoryKey,
     note,
-    date: toISODate(new Date()),
+    date: toISODate(now),
+    createdAt: now.toISOString(),
   };
 
   // Check if a user is signed in to mirror transaction to their account and Supabase cloud
@@ -260,16 +262,26 @@ export async function logPresetTransactionFromWidget(
       const db = getPowerSyncDb();
       if (db) {
         await db.execute(
-          `INSERT INTO transactions (id, type, amount, category, note, date, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
+          `INSERT INTO transactions (id, type, amount, category, note, date, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
            ON CONFLICT(id) DO UPDATE SET
              type = excluded.type,
              amount = excluded.amount,
              category = excluded.category,
              note = excluded.note,
              date = excluded.date,
+             created_at = excluded.created_at,
              updated_at = excluded.updated_at`,
-          [newTxn.id, newTxn.type, newTxn.amount, newTxn.category, newTxn.note, newTxn.date, new Date().toISOString()]
+          [
+            newTxn.id,
+            newTxn.type,
+            newTxn.amount,
+            newTxn.category,
+            newTxn.note,
+            newTxn.date,
+            newTxn.createdAt,
+            new Date().toISOString(),
+          ]
         );
       }
     } catch {}
@@ -285,6 +297,7 @@ export async function logPresetTransactionFromWidget(
           category: newTxn.category,
           note: newTxn.note,
           date: newTxn.date,
+          created_at: newTxn.createdAt,
         },
       ], { onConflict: "id" });
     }

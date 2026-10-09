@@ -152,13 +152,98 @@ export function formatFriendlyDate(iso: string): string {
 }
 
 /**
- * Groups a list of transactions by calendar date in descending or ascending order.
+ * Formats a timestamp or ISO string into Manila time (UTC+8) in 12-hour AM/PM format (e.g. "4:15 PM").
+ */
+export function formatManilaTime(dateOrIso?: string | number | Date | null): string {
+  if (!dateOrIso) return "";
+  const d =
+    typeof dateOrIso === "string" || typeof dateOrIso === "number"
+      ? new Date(dateOrIso)
+      : dateOrIso;
+  if (isNaN(d.getTime())) return "";
+
+  try {
+    return new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Manila",
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    }).format(d);
+  } catch {
+    // Arithmetic fallback for UTC+8 (Manila)
+    const utcMs = d.getTime();
+    const manilaDate = new Date(utcMs + 8 * 3600000);
+    let hours = manilaDate.getUTCHours();
+    const minutes = String(manilaDate.getUTCMinutes()).padStart(2, "0");
+    const ampm = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    return `${hours}:${minutes} ${ampm}`;
+  }
+}
+
+/**
+ * Extracts numeric millisecond timestamp from a transaction.
+ * Checks t.createdAt first, then tries to extract timestamp from t.id or t.date.
+ */
+export function getTxnTimestamp(t: Txn): number {
+  if (t.createdAt) {
+    const ms = new Date(t.createdAt).getTime();
+    if (!isNaN(ms) && ms > 0) return ms;
+  }
+  if (t.id) {
+    // Check for "qa_1728..." or "w_1728..."
+    const prefixMatch = t.id.match(/^(?:qa|w)_(\d{10,13})/);
+    if (prefixMatch) {
+      const ms = parseInt(prefixMatch[1], 10);
+      if (!isNaN(ms) && ms > 0) return ms;
+    }
+    // Check for uid(): Math.random().toString(36).slice(2, 10) + Date.now().toString(36)
+    if (t.id.length >= 14) {
+      const tail = t.id.slice(8);
+      const ms = parseInt(tail, 36);
+      if (!isNaN(ms) && ms > 1500000000000 && ms < 2500000000000) {
+        return ms;
+      }
+    }
+  }
+  if (t.date) {
+    const ms = new Date(t.date).getTime();
+    if (!isNaN(ms) && ms > 0) return ms;
+  }
+  return 0;
+}
+
+/**
+ * Returns formatted 12-hour AM/PM Manila time for a transaction, or empty string if none.
+ */
+export function getTxnManilaTime(t: Txn): string {
+  if (t.createdAt) {
+    const formatted = formatManilaTime(t.createdAt);
+    if (formatted) return formatted;
+  }
+  const ts = getTxnTimestamp(t);
+  if (ts > 0) {
+    const d = new Date(ts);
+    // Only return if timestamp contains explicit time precision (not midnight date fallback)
+    if (d.getUTCHours() !== 0 || d.getUTCMinutes() !== 0 || d.getUTCSeconds() !== 0 || t.createdAt) {
+      return formatManilaTime(d);
+    }
+  }
+  return "";
+}
+
+/**
+ * Groups a list of transactions by calendar date.
+ * Inside each day group, entries are sorted so that the latest entry is listed at the top!
  */
 export function groupTransactionsByDate(
   txns: Txn[],
   sortOrder: "desc" | "asc" = "desc"
 ): DayGroup[] {
   const groups: Record<string, Txn[]> = {};
+  const txnIndexMap = new Map<string, number>();
+  txns.forEach((t, idx) => txnIndexMap.set(t.id, idx));
 
   for (const t of txns) {
     const dayKey = t.date.slice(0, 10);
@@ -177,9 +262,20 @@ export function groupTransactionsByDate(
 
   return sortedDates.map((date) => {
     const list = [...groups[date]];
-    if (sortOrder === "asc") {
-      list.reverse();
-    }
+
+    // Always sort entries within the day group:
+    // In "desc" mode (default), latest entry is at the top of that day!
+    list.sort((a, b) => {
+      const timeA = getTxnTimestamp(a);
+      const timeB = getTxnTimestamp(b);
+      if (timeA !== timeB) {
+        return sortOrder === "asc" ? timeA - timeB : timeB - timeA;
+      }
+      const idxA = txnIndexMap.get(a.id) ?? 0;
+      const idxB = txnIndexMap.get(b.id) ?? 0;
+      return sortOrder === "asc" ? idxB - idxA : idxA - idxB;
+    });
+
     let totalIncome = 0;
     let totalSpent = 0;
     for (const t of list) {

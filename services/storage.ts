@@ -4,6 +4,7 @@ import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { SEED_DATA, Txn } from "../types/transaction";
 import { CurrencyOption, CURRENCIES, DEFAULT_CURRENCY } from "../constants/currencies";
 import { updateAllWidgetsFromTxns } from "./widgetSync";
+import { getTxnTimestamp } from "./dateUtils";
 
 const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
 const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
@@ -77,9 +78,11 @@ export async function syncGuestTransactionsToAccount(userId: string): Promise<vo
     const newFromGuest = guestTxns.filter((t) => !existingIds.has(t.id));
 
     if (newFromGuest.length > 0) {
-      const merged = [...newFromGuest, ...userTxns].sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
+      const merged = [...newFromGuest, ...userTxns].sort((a, b) => {
+        const dateDiff = b.date.localeCompare(a.date);
+        if (dateDiff !== 0) return dateDiff;
+        return getTxnTimestamp(b) - getTxnTimestamp(a);
+      });
       await saveTransactions(merged);
     }
 
@@ -106,9 +109,10 @@ export async function loadTransactions(): Promise<Txn[]> {
       try {
         const { data, error } = await supabase
           .from("transactions")
-          .select("id, type, amount, category, note, date")
+          .select("id, type, amount, category, note, date, created_at")
           .eq("user_id", userId)
-          .order("date", { ascending: false });
+          .order("date", { ascending: false })
+          .order("created_at", { ascending: false });
 
         if (!error && data) {
           const userTxns: Txn[] = data.map((r: any) => ({
@@ -118,6 +122,7 @@ export async function loadTransactions(): Promise<Txn[]> {
             category: r.category,
             note: r.note || "",
             date: r.date,
+            createdAt: r.created_at || r.createdAt,
           }));
 
           // Cache in user-specific key & mirror to guest key so history is preserved on sign-out
@@ -165,7 +170,7 @@ export async function loadTransactions(): Promise<Txn[]> {
       const db = await initPowerSync();
       if (db) {
         const rows = await db.getAll(
-          "SELECT id, type, amount, category, note, date FROM transactions ORDER BY date DESC, created_at DESC"
+          "SELECT id, type, amount, category, note, date, created_at FROM transactions ORDER BY date DESC, created_at DESC"
         );
         if (rows && rows.length > 0) {
           sqliteTxns = rows.map((r: any) => ({
@@ -175,6 +180,7 @@ export async function loadTransactions(): Promise<Txn[]> {
             category: r.category,
             note: r.note || "",
             date: r.date,
+            createdAt: r.created_at || r.createdAt,
           }));
         }
       }
@@ -188,9 +194,11 @@ export async function loadTransactions(): Promise<Txn[]> {
       // Let cached transactions take precedence and add new items (including widget entries)
       for (const t of cachedTxns) txnMap.set(t.id, t);
 
-      const merged = Array.from(txnMap.values()).sort(
-        (a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()
-      );
+      const merged = Array.from(txnMap.values()).sort((a, b) => {
+        const dateDiff = b.date.localeCompare(a.date);
+        if (dateDiff !== 0) return dateDiff;
+        return getTxnTimestamp(b) - getTxnTimestamp(a);
+      });
 
       // Keep storage in sync
       await AsyncStorage.setItem(key, JSON.stringify(merged));
@@ -296,16 +304,26 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
       await db.writeTransaction(async (tx: any) => {
         for (const t of txns) {
           await tx.execute(
-            `INSERT INTO transactions (id, type, amount, category, note, date, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)
+            `INSERT INTO transactions (id, type, amount, category, note, date, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
              ON CONFLICT(id) DO UPDATE SET
                type = excluded.type,
                amount = excluded.amount,
                category = excluded.category,
                note = excluded.note,
                date = excluded.date,
+               created_at = excluded.created_at,
                updated_at = excluded.updated_at`,
-            [t.id, t.type, t.amount, t.category, t.note, t.date, new Date().toISOString()]
+            [
+              t.id,
+              t.type,
+              t.amount,
+              t.category,
+              t.note,
+              t.date,
+              t.createdAt || new Date().toISOString(),
+              new Date().toISOString(),
+            ]
           );
         }
       });
@@ -321,6 +339,7 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
         category: t.category,
         note: t.note,
         date: t.date,
+        ...(t.createdAt ? { created_at: t.createdAt } : {}),
       }));
       await supabase.from("transactions").upsert(rows, { onConflict: "id" });
     }

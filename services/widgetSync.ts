@@ -16,6 +16,11 @@ import { toISODate } from "./dateUtils";
 import { DEFAULT_CURRENCY } from "../constants/currencies";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { getPowerSyncDb } from "../database/powersync";
+import {
+  getActiveUserId,
+  addPendingUpserts,
+  syncPendingTransactions,
+} from "./syncQueue";
 
 export const WIDGET_DATA_STORAGE_KEY = "@pocket_widget_data";
 const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
@@ -228,14 +233,8 @@ export async function logPresetTransactionFromWidget(
     createdAt: now.toISOString(),
   };
 
-  // Check if a user is signed in to mirror transaction to their account and Supabase cloud
-  let userId: string | null = null;
-  if (isSupabaseConfigured) {
-    try {
-      const { data } = await supabase.auth.getUser();
-      userId = data?.user?.id || null;
-    } catch {}
-  }
+  // Check if a user is signed in using offline-first local check
+  const userId = await getActiveUserId();
 
   // Find storage key to update
   const userKey = userId ? `@pocket_user_${userId}` : null;
@@ -286,20 +285,11 @@ export async function logPresetTransactionFromWidget(
       }
     } catch {}
 
-    // Upload directly to Supabase cloud if signed in
+    // Queue for cloud sync if signed in
     if (userId && isSupabaseConfigured) {
-      await supabase.from("transactions").upsert([
-        {
-          id: newTxn.id,
-          user_id: userId,
-          type: newTxn.type,
-          amount: newTxn.amount,
-          category: newTxn.category,
-          note: newTxn.note,
-          date: newTxn.date,
-          created_at: newTxn.createdAt,
-        },
-      ], { onConflict: "id" });
+      await addPendingUpserts(userId, [newTxn]);
+      // Trigger background sync (non-blocking)
+      syncPendingTransactions().catch(() => {});
     }
   } catch (err) {
     console.warn("[WidgetSync] Error persisting preset txn:", err);

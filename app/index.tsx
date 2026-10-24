@@ -36,11 +36,13 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  AppState,
   KeyboardAvoidingView,
   Modal,
   PanResponder,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -91,6 +93,8 @@ import {
   loadTransactions,
   saveSavedCurrency,
   saveTransactions,
+  setActiveUserId,
+  syncGuestTransactionsToAccount,
 } from "../services/storage";
 import { updateAllWidgetsFromTxns } from "../services/widgetSync";
 import { CURRENCIES, CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
@@ -220,6 +224,7 @@ export default function HomeScreen() {
     "signin" | "signup" | "forgot" | "new_password"
   >("signin");
   const [cloudModalError, setCloudModalError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // In-App OTA Auto-Update State (Zero Data Loss)
   const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -525,18 +530,32 @@ export default function HomeScreen() {
     });
 
     // 3. Supabase Auth State Listener
-    const { data: authSub } = supabase.auth.onAuthStateChange((event: any) => {
+    const { data: authSub } = supabase.auth.onAuthStateChange(async (event: any, session: any) => {
       if (event === "PASSWORD_RECOVERY") {
         setCloudModalMode("new_password");
         setCloudModalError(null);
         setShowCloudModal(true);
       } else if (event === "SIGNED_OUT") {
+        await setActiveUserId(null);
         loadTransactions().then((guestTxns) => {
           setTxns(guestTxns);
         });
       } else if (event === "SIGNED_IN") {
+        if (session?.user?.id) {
+          await setActiveUserId(session.user.id);
+          await syncGuestTransactionsToAccount(session.user.id);
+        }
         loadTransactions().then((userTxns) => {
           setTxns(userTxns);
+        });
+      }
+    });
+
+    // 4. AppState Resume Listener (re-sync when returning from background, quick-add, or widget)
+    const appStateSub = AppState.addEventListener("change", (nextState) => {
+      if (nextState === "active") {
+        loadTransactions().then((latestTxns) => {
+          setTxns(latestTxns);
         });
       }
     });
@@ -544,6 +563,7 @@ export default function HomeScreen() {
     return () => {
       urlSub.remove();
       authSub.subscription.unsubscribe();
+      appStateSub.remove();
     };
   }, []);
 
@@ -555,6 +575,22 @@ export default function HomeScreen() {
       setLoaded(true);
     })();
   }, []);
+
+  // Pull to refresh handler
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    safeHaptic.selection();
+    try {
+      const updated = await loadTransactions();
+      setTxns(updated);
+      const activeCurr = await loadSavedCurrency();
+      updateAllWidgetsFromTxns(updated, activeCurr.symbol);
+    } catch (err) {
+      console.warn("[Journal] Refresh error:", err);
+    } finally {
+      setIsRefreshing(false);
+    }
+  };
 
   // Save transactions
   useEffect(() => {
@@ -2991,6 +3027,8 @@ export default function HomeScreen() {
           estimatedItemSize={100}
           alwaysBounceVertical={true}
           showsVerticalScrollIndicator={false}
+          refreshing={isRefreshing}
+          onRefresh={handleRefresh}
           contentContainerStyle={{
             ...styles.scrollContent,
             paddingHorizontal: horizontalPad,

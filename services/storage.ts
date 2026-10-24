@@ -5,31 +5,41 @@ import { SEED_DATA, Txn } from "../types/transaction";
 import { CurrencyOption, CURRENCIES, DEFAULT_CURRENCY } from "../constants/currencies";
 import { updateAllWidgetsFromTxns } from "./widgetSync";
 import { getTxnTimestamp } from "./dateUtils";
+import {
+  getActiveUserId,
+  setActiveUserId,
+  addPendingUpserts,
+  addPendingDelete,
+  getPendingUpserts,
+  getPendingDeletes,
+  syncPendingTransactions,
+} from "./syncQueue";
 
-const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
+// Re-export syncQueue primitives so existing callers can import directly from storage
+export {
+  getActiveUserId,
+  setActiveUserId,
+  addPendingUpserts,
+  addPendingDelete,
+  getPendingUpserts,
+  getPendingDeletes,
+  syncPendingTransactions,
+};
+
+export const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
 const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
 
 export type SyncState = "synced" | "syncing" | "offline" | "guest";
 
-async function getActiveUserId(): Promise<string | null> {
-  if (!isSupabaseConfigured) return null;
-  try {
-    const { data: { user } } = await supabase.auth.getUser();
-    return user?.id || null;
-  } catch {
-    return null;
-  }
-}
-
-function getStorageKey(userId: string | null): string {
+export function getStorageKey(userId: string | null): string {
   return userId ? `@pocket_user_${userId}` : GUEST_STORAGE_KEY;
 }
 
 /**
  * Automatically syncs & merges guest transactions into the signed-in user account:
  * 1. Reads local guest transactions from GUEST_STORAGE_KEY.
- * 2. If guest transactions exist, merges them with the user's existing transactions.
- * 3. Saves and uploads the merged transactions to Supabase Cloud & user storage.
+ * 2. Merges with the user's existing transactions.
+ * 3. Saves and queues merged transactions for Supabase Cloud sync.
  * 4. Cleans up GUEST_STORAGE_KEY so guest data isn't duplicated on future logins.
  */
 export async function syncGuestTransactionsToAccount(userId: string): Promise<void> {
@@ -42,13 +52,21 @@ export async function syncGuestTransactionsToAccount(userId: string): Promise<vo
       return;
     }
 
-    // Retrieve existing user transactions
+    // Retrieve existing user transactions from local cache or cloud
     let userTxns: Txn[] = [];
-    if (isSupabaseConfigured) {
+    const rawUser = await AsyncStorage.getItem(getStorageKey(userId));
+    if (rawUser) {
+      try {
+        const parsed = JSON.parse(rawUser);
+        if (Array.isArray(parsed)) userTxns = parsed;
+      } catch {}
+    }
+
+    if (userTxns.length === 0 && isSupabaseConfigured) {
       try {
         const { data } = await supabase
           .from("transactions")
-          .select("id, type, amount, category, note, date")
+          .select("id, type, amount, category, note, date, created_at")
           .eq("user_id", userId);
         if (data) {
           userTxns = data.map((r: any) => ({
@@ -58,19 +76,10 @@ export async function syncGuestTransactionsToAccount(userId: string): Promise<vo
             category: r.category,
             note: r.note || "",
             date: r.date,
+            createdAt: r.created_at,
           }));
         }
       } catch {}
-    }
-
-    if (userTxns.length === 0) {
-      const rawUser = await AsyncStorage.getItem(getStorageKey(userId));
-      if (rawUser) {
-        try {
-          const parsed = JSON.parse(rawUser);
-          if (Array.isArray(parsed)) userTxns = parsed;
-        } catch {}
-      }
     }
 
     // Deduplicate by transaction id
@@ -86,7 +95,7 @@ export async function syncGuestTransactionsToAccount(userId: string): Promise<vo
       await saveTransactions(merged);
     }
 
-    // Clear guest storage now that transactions are safely migrated to the new account
+    // Clear guest storage now that transactions are safely migrated to the user account
     await AsyncStorage.removeItem(GUEST_STORAGE_KEY);
   } catch (err) {
     console.error("[Storage] Error syncing guest transactions to account:", err);
@@ -94,18 +103,67 @@ export async function syncGuestTransactionsToAccount(userId: string): Promise<vo
 }
 
 /**
- * Loads transactions:
- * 1. If signed in, queries Supabase Cloud directly. The logged-in account's history takes over.
- * 2. Checks local SQLite database via PowerSync if available.
- * 3. Falls back to user-scoped local AsyncStorage cache.
- * 4. In guest mode (signed out), displays preserved local history.
+ * Loads transactions in an Offline-First architecture:
+ * 1. Reads local cache first (instant 0ms response).
+ * 2. If signed in to cloud and online:
+ *    a. Flushes any offline pending writes to Supabase.
+ *    b. Fetches remote transactions.
+ *    c. Reconciles: NEVER deletes or drops offline transactions that haven't reached the cloud.
+ *    d. Merges and queues any missing local entries for upload.
+ *    e. Saves reconciled list locally and updates widgets.
+ * 3. If offline:
+ *    Returns local transactions completely intact without loss.
  */
 export async function loadTransactions(): Promise<Txn[]> {
   try {
     const userId = await getActiveUserId();
+    const key = getStorageKey(userId);
 
-    // 1. Direct Supabase fetch if signed in (account history takes over)
+    // 1. Read local AsyncStorage cache first
+    let localTxns: Txn[] = [];
+    try {
+      const raw = await AsyncStorage.getItem(key);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) localTxns = parsed;
+      }
+    } catch {}
+
+    // In guest mode (or if user key is empty on fresh device), check guest storage
+    if (localTxns.length === 0) {
+      try {
+        const rawGuest = await AsyncStorage.getItem(GUEST_STORAGE_KEY);
+        if (rawGuest) {
+          const parsed = JSON.parse(rawGuest);
+          if (Array.isArray(parsed)) localTxns = parsed;
+        }
+      } catch {}
+    }
+
+    // In guest mode, also inspect prior user caches if present
+    if (!userId && localTxns.length === 0) {
+      try {
+        const allKeys = await AsyncStorage.getAllKeys();
+        const userKeys = allKeys.filter((k) => k.startsWith("@pocket_user_"));
+        for (let i = userKeys.length - 1; i >= 0; i--) {
+          const uRaw = await AsyncStorage.getItem(userKeys[i]);
+          if (uRaw) {
+            const parsed = JSON.parse(uRaw);
+            if (Array.isArray(parsed) && parsed.length > 0) {
+              localTxns = parsed;
+              break;
+            }
+          }
+        }
+      } catch {}
+    }
+
+    // 2. Direct Supabase Cloud Reconciliation if signed in
     if (userId && isSupabaseConfigured) {
+      // Step A: Attempt to flush any offline pending writes/deletes first
+      await syncPendingTransactions().catch(() => {});
+
+      // Step B: Query remote Supabase
       try {
         const { data, error } = await supabase
           .from("transactions")
@@ -115,7 +173,7 @@ export async function loadTransactions(): Promise<Txn[]> {
           .order("created_at", { ascending: false });
 
         if (!error && data) {
-          const userTxns: Txn[] = data.map((r: any) => ({
+          const remoteTxns: Txn[] = data.map((r: any) => ({
             id: r.id,
             type: r.type,
             amount: Number(r.amount),
@@ -125,87 +183,61 @@ export async function loadTransactions(): Promise<Txn[]> {
             createdAt: r.created_at || r.createdAt,
           }));
 
-          // Cache in user-specific key & mirror to guest key so history is preserved on sign-out
-          await AsyncStorage.setItem(getStorageKey(userId), JSON.stringify(userTxns));
-          await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(userTxns));
-          return userTxns;
-        }
-      } catch (err) {
-        console.warn("[Storage] Could not fetch directly from Supabase, falling back to cache:", err);
-      }
-    }
+          const pendingDeletes = new Set(await getPendingDeletes(userId));
+          const pendingUpserts = await getPendingUpserts(userId);
 
-    // 2. Read local AsyncStorage cache first (preserves widget entries and offline guest data)
-    const key = getStorageKey(userId);
-    let cachedTxns: Txn[] = [];
-    try {
-      const raw = await AsyncStorage.getItem(key);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) cachedTxns = parsed;
-      }
-    } catch {}
-
-    // In guest mode, if current key is empty, check other user caches
-    if (!userId && cachedTxns.length === 0) {
-      try {
-        const allKeys = await AsyncStorage.getAllKeys();
-        const userKeys = allKeys.filter((k) => k.startsWith("@pocket_user_"));
-        for (let i = userKeys.length - 1; i >= 0; i--) {
-          const uRaw = await AsyncStorage.getItem(userKeys[i]);
-          if (uRaw) {
-            const parsed = JSON.parse(uRaw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              cachedTxns = parsed;
-              break;
+          // Build reconciled map starting with remote rows (excluding pending deletes)
+          const reconciledMap = new Map<string, Txn>();
+          for (const rt of remoteTxns) {
+            if (!pendingDeletes.has(rt.id)) {
+              reconciledMap.set(rt.id, rt);
             }
           }
-        }
-      } catch {}
-    }
 
-    // 3. Checks local SQLite database via PowerSync if available
-    let sqliteTxns: Txn[] = [];
-    try {
-      const db = await initPowerSync();
-      if (db) {
-        const rows = await db.getAll(
-          "SELECT id, type, amount, category, note, date, created_at FROM transactions ORDER BY date DESC, created_at DESC"
-        );
-        if (rows && rows.length > 0) {
-          sqliteTxns = rows.map((r: any) => ({
-            id: r.id,
-            type: r.type,
-            amount: Number(r.amount),
-            category: r.category,
-            note: r.note || "",
-            date: r.date,
-            createdAt: r.created_at || r.createdAt,
-          }));
+          // Merge local transactions that were added offline and have not yet reached Supabase
+          const unsyncedLocalTxns: Txn[] = [];
+          for (const lt of localTxns) {
+            if (pendingDeletes.has(lt.id)) continue;
+
+            if (!reconciledMap.has(lt.id)) {
+              // Local entry NOT in Supabase! Preserve it and queue for upload!
+              reconciledMap.set(lt.id, lt);
+              unsyncedLocalTxns.push(lt);
+            } else if (pendingUpserts[lt.id]) {
+              // Local pending edit takes precedence over remote
+              reconciledMap.set(lt.id, pendingUpserts[lt.id]);
+            }
+          }
+
+          // If there were offline transactions that weren't uploaded, queue them now
+          if (unsyncedLocalTxns.length > 0) {
+            await addPendingUpserts(userId, unsyncedLocalTxns);
+            syncPendingTransactions().catch(() => {});
+          }
+
+          const reconciledList = Array.from(reconciledMap.values()).sort((a, b) => {
+            const dateDiff = b.date.localeCompare(a.date);
+            if (dateDiff !== 0) return dateDiff;
+            return getTxnTimestamp(b) - getTxnTimestamp(a);
+          });
+
+          // Cache in user key and guest mirror
+          await AsyncStorage.setItem(key, JSON.stringify(reconciledList));
+          await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(reconciledList));
+
+          // Keep widgets updated
+          const activeCurrency = await loadSavedCurrency();
+          updateAllWidgetsFromTxns(reconciledList, activeCurrency.symbol);
+
+          return reconciledList;
         }
+      } catch (err) {
+        console.warn("[Storage] Cloud fetch failed, continuing with local offline cache:", err);
       }
-    } catch {}
-
-    // 4. Merge cached transactions and SQLite transactions (never overwrite or lose widget entries!)
-    if (cachedTxns.length > 0 || sqliteTxns.length > 0) {
-      const txnMap = new Map<string, Txn>();
-      // Insert SQLite transactions first
-      for (const t of sqliteTxns) txnMap.set(t.id, t);
-      // Let cached transactions take precedence and add new items (including widget entries)
-      for (const t of cachedTxns) txnMap.set(t.id, t);
-
-      const merged = Array.from(txnMap.values()).sort((a, b) => {
-        const dateDiff = b.date.localeCompare(a.date);
-        if (dateDiff !== 0) return dateDiff;
-        return getTxnTimestamp(b) - getTxnTimestamp(a);
-      });
-
-      // Keep storage in sync
-      await AsyncStorage.setItem(key, JSON.stringify(merged));
-      return merged;
     }
 
-    return [];
+    // 3. Fallback: Return verified local cache
+    return localTxns;
   } catch (error) {
     console.error("[Storage] Error loading transactions:", error);
     return [];
@@ -214,72 +246,15 @@ export async function loadTransactions(): Promise<Txn[]> {
 
 /**
  * Loads transactions filtered by date range [startDate, endDate] (inclusive).
- * Highly optimized for 100,000+ rows using B-Tree composite indexes:
- * - Direct index query in SQLite and Supabase PostgreSQL.
- * - Filters in memory for local cache fallback.
+ * Uses reconciled offline-first storage so offline entries are never excluded.
  */
 export async function loadTransactionsForPeriod(
   startDate: string,
   endDate: string
 ): Promise<Txn[]> {
   try {
-    const userId = await getActiveUserId();
-
-    // 1. Direct Supabase range fetch if signed in
-    if (userId && isSupabaseConfigured) {
-      try {
-        const { data, error } = await supabase
-          .from("transactions")
-          .select("id, type, amount, category, note, date")
-          .eq("user_id", userId)
-          .gte("date", startDate)
-          .lte("date", endDate)
-          .order("date", { ascending: false });
-
-        if (!error && data) {
-          return data.map((r: any) => ({
-            id: r.id,
-            type: r.type,
-            amount: Number(r.amount),
-            category: r.category,
-            note: r.note || "",
-            date: r.date,
-          }));
-        }
-      } catch (err) {
-        console.warn("[Storage] Period fetch from Supabase fallback:", err);
-      }
-    }
-
-    // 2. PowerSync SQLite range query
-    const db = await initPowerSync();
-    if (db) {
-      const rows = await db.getAll(
-        "SELECT id, type, amount, category, note, date FROM transactions WHERE date >= ? AND date <= ? ORDER BY date DESC, created_at DESC",
-        [startDate, endDate]
-      );
-      if (rows && rows.length > 0) {
-        return rows.map((r: any) => ({
-          id: r.id,
-          type: r.type,
-          amount: Number(r.amount),
-          category: r.category,
-          note: r.note || "",
-          date: r.date,
-        }));
-      }
-    }
-
-    // 3. Fallback: filter user-scoped local cache
-    const key = getStorageKey(userId);
-    const raw = await AsyncStorage.getItem(key);
-    if (raw) {
-      const parsed: Txn[] = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        return parsed.filter((t) => t.date >= startDate && t.date <= endDate);
-      }
-    }
-    return [];
+    const all = await loadTransactions();
+    return all.filter((t) => t.date >= startDate && t.date <= endDate);
   } catch (error) {
     console.error("[Storage] Error loading transactions for period:", error);
     return [];
@@ -288,6 +263,8 @@ export async function loadTransactionsForPeriod(
 
 /**
  * Saves transactions locally with 0ms UI delay and queues for cloud sync.
+ * Works seamlessly offline: writes to local disk, queues pending changes,
+ * and updates widgets immediately.
  */
 export async function saveTransactions(txns: Txn[]): Promise<void> {
   try {
@@ -329,19 +306,11 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
       });
     }
 
-    // 3. Direct Supabase sync if signed in & configured
+    // 3. Queue for cloud sync if signed in
     if (userId && isSupabaseConfigured) {
-      const rows = txns.map((t) => ({
-        id: t.id,
-        user_id: userId,
-        type: t.type,
-        amount: t.amount,
-        category: t.category,
-        note: t.note,
-        date: t.date,
-        ...(t.createdAt ? { created_at: t.createdAt } : {}),
-      }));
-      await supabase.from("transactions").upsert(rows, { onConflict: "id" });
+      await addPendingUpserts(userId, txns);
+      // Trigger background sync (non-blocking)
+      syncPendingTransactions().catch(() => {});
     }
 
     // 4. Keep home screen widgets updated in real time
@@ -355,8 +324,8 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
 /**
  * Deletes a single transaction by ID:
  * 1. Removes from local storage cache (guest and user key).
- * 2. Deletes from PowerSync SQLite.
- * 3. Deletes from Supabase Cloud (if signed in).
+ * 2. Queues ID for cloud deletion.
+ * 3. Immediately triggers background cloud sync.
  */
 export async function deleteTransaction(id: string): Promise<void> {
   try {
@@ -375,22 +344,16 @@ export async function deleteTransaction(id: string): Promise<void> {
       }
     }
 
-    // 2. Remove from PowerSync SQLite database
+    // 2. Remove from PowerSync SQLite database (if active)
     const db = getPowerSyncDb();
     if (db) {
       await db.execute("DELETE FROM transactions WHERE id = ?", [id]);
     }
 
-    // 3. Remove from Supabase Cloud
+    // 3. Queue deletion for Supabase Cloud and trigger sync
     if (userId && isSupabaseConfigured) {
-      const { error } = await supabase
-        .from("transactions")
-        .delete()
-        .eq("id", id)
-        .eq("user_id", userId);
-      if (error) {
-        console.error("[Storage] Supabase delete error:", error);
-      }
+      await addPendingDelete(userId, id);
+      syncPendingTransactions().catch(() => {});
     }
 
     // 4. Update home screen widgets
@@ -435,9 +398,16 @@ export async function getSyncStatus(): Promise<SyncState> {
     return "guest";
   }
 
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session) {
+  const userId = await getActiveUserId();
+  if (!userId) {
     return "guest";
+  }
+
+  const pendingUpserts = await getPendingUpserts(userId);
+  const pendingDeletes = await getPendingDeletes(userId);
+
+  if (Object.keys(pendingUpserts).length > 0 || pendingDeletes.length > 0) {
+    return "syncing";
   }
 
   return "synced";
@@ -450,7 +420,6 @@ export async function loadSavedCurrency(): Promise<CurrencyOption> {
   try {
     const raw = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
     if (!raw) {
-      // Persist default currency (PHP ₱) so widgets and background workers read it immediately
       await AsyncStorage.setItem(CURRENCY_STORAGE_KEY, JSON.stringify(DEFAULT_CURRENCY));
       return DEFAULT_CURRENCY;
     }
@@ -468,7 +437,6 @@ export async function loadSavedCurrency(): Promise<CurrencyOption> {
 export async function saveSavedCurrency(currency: CurrencyOption): Promise<void> {
   try {
     await AsyncStorage.setItem(CURRENCY_STORAGE_KEY, JSON.stringify(currency));
-    // Immediately refresh all widgets with the new currency symbol
     const txns = await loadTransactions();
     await updateAllWidgetsFromTxns(txns, currency.symbol);
   } catch (err) {

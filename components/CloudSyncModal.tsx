@@ -15,7 +15,7 @@ import {
 import { COLORS, FONTS, STYLES } from "../constants/theme";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { safeHaptic } from "../services/haptics";
-import { syncGuestTransactionsToAccount } from "../services/storage";
+import { setActiveUserId, syncGuestTransactionsToAccount } from "../services/storage";
 
 type CloudSyncModalProps = {
   visible: boolean;
@@ -222,6 +222,7 @@ export function CloudSyncModal({
         });
         if (error) throw error;
         if (data.user?.id) {
+          await setActiveUserId(data.user.id);
           await syncGuestTransactionsToAccount(data.user.id);
         }
         setUserEmail(data.user?.email || email);
@@ -291,6 +292,7 @@ export function CloudSyncModal({
         if (error) throw error;
         if (data.session) {
           if (data.user?.id) {
+            await setActiveUserId(data.user.id);
             await syncGuestTransactionsToAccount(data.user.id);
           }
           setUserEmail(data.user?.email || email);
@@ -306,7 +308,10 @@ export function CloudSyncModal({
           email: email.trim(),
           password: password.trim(),
         });
-        if (error) throw error;
+        if (data.user?.id) {
+          await setActiveUserId(data.user.id);
+          await syncGuestTransactionsToAccount(data.user.id);
+        }
         setUserEmail(data.user?.email || email);
         setSuccessMsg("Signed in! Journal synced with cloud.");
         safeHaptic.success();
@@ -359,6 +364,7 @@ export function CloudSyncModal({
     setLoading(true);
     try {
       await supabase.auth.signOut();
+      await setActiveUserId(null);
       setUserEmail(null);
       setEmail("");
       setPassword("");

@@ -54,6 +54,14 @@ function money(amount: number, symbol: string): string {
   })}`;
 }
 
+function formatMonth(month: string): string {
+  const [year, monthNumber] = month.split("-").map(Number);
+  return new Date(year, monthNumber - 1, 1).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+}
+
 export function SalaryPlanCard({
   transactions,
   currencySymbol,
@@ -82,6 +90,8 @@ export function SalaryPlanCard({
     0
   );
   const draftIsValid = Object.values(draft).every(Number.isFinite) && isValidSalaryAllocation(draft);
+  const now = new Date();
+  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   const handleSave = async () => {
     if (!draftIsValid || saving) {
@@ -146,6 +156,9 @@ export function SalaryPlanCard({
           <Text style={styles.eyebrow}>MONTHLY SALARY PLAN</Text>
           <Text style={styles.subtitle}>
             Based on {money(summary.salaryIncome, currencySymbol)} in Salary income
+            {summary.salaryIncomeMonth
+              ? ` · ${summary.salaryIncomeMonth === currentMonth ? "this month" : formatMonth(summary.salaryIncomeMonth)}`
+              : ""}
           </Text>
         </View>
         <Pressable

@@ -11,6 +11,7 @@ export type SalaryAllocationPlan = {
 
 export type SalaryBudgetSummary = SalaryAllocationPlan & {
   salaryIncome: number;
+  salaryIncomeMonth: string | null;
   needsBudget: number;
   wantsBudget: number;
   needsSpent: number;
@@ -87,23 +88,36 @@ export function getMonthlySalaryBudget(
 ): SalaryBudgetSummary {
   const now = new Date();
   const activeMonth = month ?? `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-  let salaryIncome = 0;
+  const salaryIncomeByMonth: Record<string, number> = {};
   let needsSpent = 0;
   let wantsSpent = 0;
 
   for (const txn of txns) {
-    if (!txn.date.startsWith(activeMonth)) continue;
+    const transactionMonth = txn.date.slice(0, 7);
     if (txn.type === "income" && txn.category === "salary") {
-      salaryIncome += txn.amount;
-    } else if (txn.type === "expense") {
+      salaryIncomeByMonth[transactionMonth] =
+        (salaryIncomeByMonth[transactionMonth] || 0) + txn.amount;
+    } else if (transactionMonth === activeMonth && txn.type === "expense") {
       if (getTransactionBudgetGroup(txn) === "needs") needsSpent += txn.amount;
       else wantsSpent += txn.amount;
     }
   }
 
+  const salaryIncomeMonth =
+    salaryIncomeByMonth[activeMonth] !== undefined
+      ? activeMonth
+      : Object.keys(salaryIncomeByMonth)
+          .filter((transactionMonth) => transactionMonth < activeMonth)
+          .sort()
+          .pop() ?? null;
+  const salaryIncome = salaryIncomeMonth
+    ? salaryIncomeByMonth[salaryIncomeMonth]
+    : 0;
+
   return {
     ...plan,
     salaryIncome,
+    salaryIncomeMonth,
     needsBudget: (salaryIncome * plan.needs) / 100,
     wantsBudget: (salaryIncome * plan.wants) / 100,
     needsSpent,

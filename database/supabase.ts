@@ -44,9 +44,9 @@ const ExpoSecureStoreAdapter = {
       if (oldCountStr) {
         const oldCount = parseInt(oldCountStr, 10);
         for (let i = 0; i < oldCount; i++) {
-          await SecureStore.deleteItemAsync(`${key}_chunk_${i}`).catch(() => {});
+          await SecureStore.deleteItemAsync(`${key}_chunk_${i}`).catch(() => { });
         }
-        await SecureStore.deleteItemAsync(`${key}_chunks`).catch(() => {});
+        await SecureStore.deleteItemAsync(`${key}_chunks`).catch(() => { });
       }
 
       if (value.length <= CHUNK_SIZE) {
@@ -75,12 +75,12 @@ const ExpoSecureStoreAdapter = {
       if (countStr) {
         const count = parseInt(countStr, 10);
         for (let i = 0; i < count; i++) {
-          await SecureStore.deleteItemAsync(`${key}_chunk_${i}`).catch(() => {});
+          await SecureStore.deleteItemAsync(`${key}_chunk_${i}`).catch(() => { });
         }
-        await SecureStore.deleteItemAsync(`${key}_chunks`).catch(() => {});
+        await SecureStore.deleteItemAsync(`${key}_chunks`).catch(() => { });
       }
-      await SecureStore.deleteItemAsync(key).catch(() => {});
-    } catch {}
+      await SecureStore.deleteItemAsync(key).catch(() => { });
+    } catch { }
   },
 };
 

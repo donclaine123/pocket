@@ -31,6 +31,8 @@ const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
 
 export type SyncState = "synced" | "syncing" | "offline" | "guest";
 
+const transactionRefreshes = new Map<string, Promise<Txn[]>>();
+
 export function getStorageKey(userId: string | null): string {
   return userId ? `@pocket_user_${userId}` : GUEST_STORAGE_KEY;
 }
@@ -114,129 +116,132 @@ export async function syncGuestTransactionsToAccount(userId: string): Promise<vo
  * 3. If offline:
  *    Returns local transactions completely intact without loss.
  */
-export async function loadTransactions(): Promise<Txn[]> {
+async function readLocalTransactions(userId: string | null): Promise<Txn[]> {
+  let localTxns: Txn[] = [];
   try {
-    const userId = await getActiveUserId();
-    const key = getStorageKey(userId);
+    const raw = await AsyncStorage.getItem(getStorageKey(userId));
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) localTxns = parsed;
+    }
+  } catch {}
 
-    // 1. Read local AsyncStorage cache first
-    let localTxns: Txn[] = [];
+  if (localTxns.length === 0) {
     try {
-      const raw = await AsyncStorage.getItem(key);
+      const raw = await AsyncStorage.getItem(GUEST_STORAGE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
         if (Array.isArray(parsed)) localTxns = parsed;
       }
     } catch {}
+  }
 
-    // In guest mode (or if user key is empty on fresh device), check guest storage
-    if (localTxns.length === 0) {
-      try {
-        const rawGuest = await AsyncStorage.getItem(GUEST_STORAGE_KEY);
-        if (rawGuest) {
-          const parsed = JSON.parse(rawGuest);
-          if (Array.isArray(parsed)) localTxns = parsed;
+  if (!userId && localTxns.length === 0) {
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const userKeys = allKeys.filter((key) => key.startsWith("@pocket_user_"));
+      for (let i = userKeys.length - 1; i >= 0; i--) {
+        const raw = await AsyncStorage.getItem(userKeys[i]);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          localTxns = parsed;
+          break;
         }
-      } catch {}
-    }
-
-    // In guest mode, also inspect prior user caches if present
-    if (!userId && localTxns.length === 0) {
-      try {
-        const allKeys = await AsyncStorage.getAllKeys();
-        const userKeys = allKeys.filter((k) => k.startsWith("@pocket_user_"));
-        for (let i = userKeys.length - 1; i >= 0; i--) {
-          const uRaw = await AsyncStorage.getItem(userKeys[i]);
-          if (uRaw) {
-            const parsed = JSON.parse(uRaw);
-            if (Array.isArray(parsed) && parsed.length > 0) {
-              localTxns = parsed;
-              break;
-            }
-          }
-        }
-      } catch {}
-    }
-
-    // 2. Direct Supabase Cloud Reconciliation if signed in
-    if (userId && isSupabaseConfigured) {
-      // Step A: Attempt to flush any offline pending writes/deletes first
-      await syncPendingTransactions().catch(() => {});
-
-      // Step B: Query remote Supabase
-      try {
-        const { data, error } = await supabase
-          .from("transactions")
-          .select("id, type, amount, category, note, date, created_at")
-          .eq("user_id", userId)
-          .order("date", { ascending: false })
-          .order("created_at", { ascending: false });
-
-        if (!error && data) {
-          const remoteTxns: Txn[] = data.map((r: any) => ({
-            id: r.id,
-            type: r.type,
-            amount: Number(r.amount),
-            category: r.category,
-            note: r.note || "",
-            date: r.date,
-            createdAt: r.created_at || r.createdAt,
-          }));
-
-          const pendingDeletes = new Set(await getPendingDeletes(userId));
-          const pendingUpserts = await getPendingUpserts(userId);
-
-          // Build reconciled map starting with remote rows (excluding pending deletes)
-          const reconciledMap = new Map<string, Txn>();
-          for (const rt of remoteTxns) {
-            if (!pendingDeletes.has(rt.id)) {
-              reconciledMap.set(rt.id, rt);
-            }
-          }
-
-          // Merge local transactions that were added offline and have not yet reached Supabase
-          const unsyncedLocalTxns: Txn[] = [];
-          for (const lt of localTxns) {
-            if (pendingDeletes.has(lt.id)) continue;
-
-            if (!reconciledMap.has(lt.id)) {
-              // Local entry NOT in Supabase! Preserve it and queue for upload!
-              reconciledMap.set(lt.id, lt);
-              unsyncedLocalTxns.push(lt);
-            } else if (pendingUpserts[lt.id]) {
-              // Local pending edit takes precedence over remote
-              reconciledMap.set(lt.id, pendingUpserts[lt.id]);
-            }
-          }
-
-          // If there were offline transactions that weren't uploaded, queue them now
-          if (unsyncedLocalTxns.length > 0) {
-            await addPendingUpserts(userId, unsyncedLocalTxns);
-            syncPendingTransactions().catch(() => {});
-          }
-
-          const reconciledList = Array.from(reconciledMap.values()).sort((a, b) => {
-            const dateDiff = b.date.localeCompare(a.date);
-            if (dateDiff !== 0) return dateDiff;
-            return getTxnTimestamp(b) - getTxnTimestamp(a);
-          });
-
-          // Cache in user key and guest mirror
-          await AsyncStorage.setItem(key, JSON.stringify(reconciledList));
-          await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(reconciledList));
-
-          // Keep widgets updated
-          const activeCurrency = await loadSavedCurrency();
-          updateAllWidgetsFromTxns(reconciledList, activeCurrency.symbol);
-
-          return reconciledList;
-        }
-      } catch (err) {
-        console.warn("[Storage] Cloud fetch failed, continuing with local offline cache:", err);
       }
-    }
+    } catch {}
+  }
 
-    // 3. Fallback: Return verified local cache
+  return localTxns;
+}
+
+function refreshTransactions(userId: string): Promise<Txn[]> {
+  const existingRefresh = transactionRefreshes.get(userId);
+  if (existingRefresh) return existingRefresh;
+
+  const refresh = (async () => {
+    try {
+      // Keep the durable queue moving, but never make local reads wait for it.
+      syncPendingTransactions().catch(() => {});
+
+      const { data, error } = await supabase
+        .from("transactions")
+        .select("id, type, amount, category, note, date, created_at")
+        .eq("user_id", userId)
+        .order("date", { ascending: false })
+        .order("created_at", { ascending: false });
+
+      if (error || !data) {
+        if (error) console.warn("[Storage] Cloud fetch failed; keeping local transactions:", error);
+        return readLocalTransactions(userId);
+      }
+
+      const localTxns = await readLocalTransactions(userId);
+      const activeUserId = await getActiveUserId();
+      if (activeUserId !== userId) return readLocalTransactions(activeUserId);
+
+      const remoteTxns: Txn[] = data.map((r: any) => ({
+        id: r.id,
+        type: r.type,
+        amount: Number(r.amount),
+        category: r.category,
+        note: r.note || "",
+        date: r.date,
+        createdAt: r.created_at || r.createdAt,
+      }));
+      const pendingDeletes = new Set(await getPendingDeletes(userId));
+      const pendingUpserts = await getPendingUpserts(userId);
+      const reconciledMap = new Map<string, Txn>();
+
+      for (const txn of remoteTxns) {
+        if (!pendingDeletes.has(txn.id)) reconciledMap.set(txn.id, txn);
+      }
+
+      const unsyncedLocalTxns: Txn[] = [];
+      for (const txn of localTxns) {
+        if (pendingDeletes.has(txn.id)) continue;
+        if (!reconciledMap.has(txn.id)) {
+          reconciledMap.set(txn.id, txn);
+          unsyncedLocalTxns.push(txn);
+        } else if (pendingUpserts[txn.id]) {
+          reconciledMap.set(txn.id, pendingUpserts[txn.id]);
+        }
+      }
+
+      if (unsyncedLocalTxns.length > 0) {
+        await addPendingUpserts(userId, unsyncedLocalTxns);
+        syncPendingTransactions().catch(() => {});
+      }
+
+      const reconciledTxns = Array.from(reconciledMap.values()).sort((a, b) => {
+        const dateDiff = b.date.localeCompare(a.date);
+        return dateDiff || getTxnTimestamp(b) - getTxnTimestamp(a);
+      });
+
+      await AsyncStorage.setItem(getStorageKey(userId), JSON.stringify(reconciledTxns));
+      await AsyncStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(reconciledTxns));
+
+      const activeCurrency = await loadSavedCurrency();
+      await updateAllWidgetsFromTxns(reconciledTxns, activeCurrency.symbol);
+      return reconciledTxns;
+    } catch (err) {
+      console.warn("[Storage] Cloud refresh failed; keeping local transactions:", err);
+      return readLocalTransactions(userId);
+    }
+  })().finally(() => transactionRefreshes.delete(userId));
+
+  transactionRefreshes.set(userId, refresh);
+  return refresh;
+}
+
+/** Load local transactions immediately; pass true to also await cloud reconciliation. */
+export async function loadTransactions(forceRefresh = false): Promise<Txn[]> {
+  try {
+    const userId = await getActiveUserId();
+    const localTxns = await readLocalTransactions(userId);
+
+    if (forceRefresh && userId && isSupabaseConfigured) return refreshTransactions(userId);
+
     return localTxns;
   } catch (error) {
     console.error("[Storage] Error loading transactions:", error);
@@ -315,7 +320,7 @@ export async function saveTransactions(txns: Txn[]): Promise<void> {
 
     // 4. Keep home screen widgets updated in real time
     const activeCurrency = await loadSavedCurrency();
-    updateAllWidgetsFromTxns(txns, activeCurrency.symbol);
+    await updateAllWidgetsFromTxns(txns, activeCurrency.symbol);
   } catch (error) {
     console.error("[Storage] Error saving transactions:", error);
   }

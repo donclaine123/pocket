@@ -88,6 +88,7 @@ import {
 import { safeHaptic } from "../services/haptics";
 import {
   clearTransactions,
+  getActiveUserId,
   deleteTransaction,
   loadSavedCurrency,
   loadTransactions,
@@ -536,17 +537,21 @@ export default function HomeScreen() {
         setCloudModalError(null);
         setShowCloudModal(true);
       } else if (event === "SIGNED_OUT") {
-        await setActiveUserId(null);
-        loadTransactions().then((guestTxns) => {
-          setTxns(guestTxns);
-        });
-      } else if (event === "SIGNED_IN") {
+        // Only switch to guest mode if the user explicitly signed out (active user ID is null)
+        const currentUserId = await getActiveUserId();
+        if (!currentUserId) {
+          loadTransactions().then((guestTxns) => {
+            setTxns(guestTxns);
+          });
+        }
+      } else if (event === "SIGNED_IN" || event === "INITIAL_SESSION") {
         if (session?.user?.id) {
           await setActiveUserId(session.user.id);
           await syncGuestTransactionsToAccount(session.user.id);
         }
-        loadTransactions().then((userTxns) => {
-          setTxns(userTxns);
+        loadTransactions().then(setTxns);
+        loadTransactions(true).then(setTxns).catch((err) => {
+          console.warn("[Journal] Background transaction refresh failed:", err);
         });
       }
     });
@@ -554,8 +559,9 @@ export default function HomeScreen() {
     // 4. AppState Resume Listener (re-sync when returning from background, quick-add, or widget)
     const appStateSub = AppState.addEventListener("change", (nextState) => {
       if (nextState === "active") {
-        loadTransactions().then((latestTxns) => {
-          setTxns(latestTxns);
+        loadTransactions().then(setTxns);
+        loadTransactions(true).then(setTxns).catch((err) => {
+          console.warn("[Journal] Background transaction refresh failed:", err);
         });
       }
     });
@@ -573,6 +579,9 @@ export default function HomeScreen() {
       const data = await loadTransactions();
       setTxns(data);
       setLoaded(true);
+      loadTransactions(true).then(setTxns).catch((err) => {
+        console.warn("[Journal] Background transaction refresh failed:", err);
+      });
     })();
   }, []);
 
@@ -581,10 +590,8 @@ export default function HomeScreen() {
     setIsRefreshing(true);
     safeHaptic.selection();
     try {
-      const updated = await loadTransactions();
+      const updated = await loadTransactions(true);
       setTxns(updated);
-      const activeCurr = await loadSavedCurrency();
-      updateAllWidgetsFromTxns(updated, activeCurr.symbol);
     } catch (err) {
       console.warn("[Journal] Refresh error:", err);
     } finally {
@@ -959,22 +966,22 @@ export default function HomeScreen() {
     }
 
     if (editingTxnId) {
-      setTxns((prev) =>
-        prev.map((t) =>
-          t.id === editingTxnId
-            ? {
-                ...t,
-                type: formType,
-                amount: Math.round(amt * 100) / 100,
-                category: formCategory,
-                note: finalNote,
-                date: formDate,
-                createdAt: targetCreatedAt,
-                originalCurrency: currency.code,
-              }
-            : t
-        )
+      const updatedList = txns.map((t) =>
+        t.id === editingTxnId
+          ? {
+              ...t,
+              type: formType,
+              amount: Math.round(amt * 100) / 100,
+              category: formCategory,
+              note: finalNote,
+              date: formDate,
+              createdAt: targetCreatedAt,
+              originalCurrency: currency.code,
+            }
+          : t
       );
+      setTxns(updatedList);
+      saveTransactions(updatedList);
       safeHaptic.success();
     } else {
       const newTxn: Txn = {
@@ -987,7 +994,9 @@ export default function HomeScreen() {
         createdAt: targetCreatedAt,
         originalCurrency: currency.code,
       };
-      setTxns((prev) => [newTxn, ...prev]);
+      const updatedList = [newTxn, ...txns];
+      setTxns(updatedList);
+      saveTransactions(updatedList);
       safeHaptic.success();
     }
 

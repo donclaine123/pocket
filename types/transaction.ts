@@ -1,4 +1,5 @@
 export type TxnType = "expense" | "income";
+export type BudgetGroup = "needs" | "wants";
 
 export type CategoryKey =
   // Expense tags
@@ -38,6 +39,7 @@ export type Txn = {
   type: TxnType;
   amount: number;
   category: CategoryKey;
+  budgetGroup?: BudgetGroup;
   note: string;
   date: string; // ISO yyyy-mm-dd
   createdAt?: string; // ISO timestamp string

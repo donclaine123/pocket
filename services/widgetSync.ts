@@ -14,6 +14,12 @@ import {
 import { Txn, CategoryKey } from "../types/transaction";
 import { toISODate } from "./dateUtils";
 import { DEFAULT_CURRENCY } from "../constants/currencies";
+import { convertAmount, getCachedRates, loadConversionEnabled } from "./exchangeService";
+import {
+  getDefaultBudgetGroup,
+  getMonthlySalaryBudget,
+  loadSalaryAllocation,
+} from "./salaryBudget";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { getPowerSyncDb } from "../database/powersync";
 import {
@@ -25,6 +31,26 @@ import {
 export const WIDGET_DATA_STORAGE_KEY = "@pocket_widget_data";
 const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
 const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
+
+async function getWidgetBudgetSummary(txns: Txn[], currencyCode: string) {
+  const [plan, conversionEnabled, rates] = await Promise.all([
+    loadSalaryAllocation(),
+    loadConversionEnabled(),
+    getCachedRates(),
+  ]);
+  const budgetTxns = conversionEnabled
+    ? txns.map((txn) => ({
+        ...txn,
+        amount: convertAmount(
+          txn.amount,
+          txn.originalCurrency || DEFAULT_CURRENCY.code,
+          currencyCode,
+          rates
+        ),
+      }))
+    : txns;
+  return getMonthlySalaryBudget(budgetTxns, plan);
+}
 
 /**
  * Loads current widget summary data from AsyncStorage.
@@ -74,13 +100,20 @@ export async function updateAllWidgetsFromTxns(
 
   try {
     let currencySymbol = overrideCurrency;
+    let currencyCode = DEFAULT_CURRENCY.code;
     if (!currencySymbol) {
       try {
         const rawCurr = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
         if (rawCurr) {
           const parsed = JSON.parse(rawCurr);
           currencySymbol = parsed?.symbol || DEFAULT_CURRENCY.symbol;
+          currencyCode = parsed?.code || DEFAULT_CURRENCY.code;
         }
+      } catch {}
+    } else {
+      try {
+        const rawCurr = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
+        if (rawCurr) currencyCode = JSON.parse(rawCurr)?.code || DEFAULT_CURRENCY.code;
       } catch {}
     }
     if (!currencySymbol) currencySymbol = DEFAULT_CURRENCY.symbol;
@@ -110,9 +143,11 @@ export async function updateAllWidgetsFromTxns(
       type: t.type,
       amount: t.amount,
       category: t.category,
+      budgetGroup: t.type === "expense" ? t.budgetGroup || getDefaultBudgetGroup(t.category) : undefined,
       note: t.note || "",
       date: t.date,
     }));
+    const budgetSummary = await getWidgetBudgetSummary(txns, currencyCode);
 
     const isDark = Appearance.getColorScheme() === "dark";
 
@@ -123,6 +158,7 @@ export async function updateAllWidgetsFromTxns(
       todayIncome,
       isDark,
       recentTxns,
+      budgetSummary,
     };
 
     // Cache locally for fast subsequent reads
@@ -176,6 +212,21 @@ export async function refreshAllWidgets(forcedIsDark?: boolean): Promise<void> {
         : Appearance.getColorScheme() === "dark";
     widgetData.isDark = isDark;
 
+    const userId = await getActiveUserId();
+    const rawTransactions =
+      (await AsyncStorage.getItem(userId ? `@pocket_user_${userId}` : GUEST_STORAGE_KEY)) ||
+      (await AsyncStorage.getItem(GUEST_STORAGE_KEY));
+    const rawCurrency = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
+    const currencyCode = rawCurrency
+      ? JSON.parse(rawCurrency)?.code || DEFAULT_CURRENCY.code
+      : DEFAULT_CURRENCY.code;
+    if (rawTransactions) {
+      const parsed = JSON.parse(rawTransactions);
+      if (Array.isArray(parsed)) {
+        widgetData.budgetSummary = await getWidgetBudgetSummary(parsed, currencyCode);
+      }
+    }
+
     // Cache with updated theme
     await AsyncStorage.setItem(
       WIDGET_DATA_STORAGE_KEY,
@@ -222,6 +273,17 @@ export async function logPresetTransactionFromWidget(
   category: string,
   note: string
 ): Promise<WidgetDataProps> {
+  let currencySymbol = DEFAULT_CURRENCY.symbol;
+  let currencyCode = DEFAULT_CURRENCY.code;
+  try {
+    const rawCurr = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
+    if (rawCurr) {
+      const parsed = JSON.parse(rawCurr);
+      currencySymbol = parsed?.symbol || currencySymbol;
+      currencyCode = parsed?.code || currencyCode;
+    }
+  } catch {}
+
   const now = new Date();
   const newTxn: Txn = {
     id: `w_${now.getTime()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -231,6 +293,8 @@ export async function logPresetTransactionFromWidget(
     note,
     date: toISODate(now),
     createdAt: now.toISOString(),
+    originalCurrency: currencyCode,
+    budgetGroup: getDefaultBudgetGroup(category as CategoryKey),
   };
 
   // Check if a user is signed in using offline-first local check
@@ -296,15 +360,6 @@ export async function logPresetTransactionFromWidget(
   }
 
   // Recalculate metrics
-  let currencySymbol = DEFAULT_CURRENCY.symbol;
-  try {
-    const rawCurr = await AsyncStorage.getItem(CURRENCY_STORAGE_KEY);
-    if (rawCurr) {
-      const parsed = JSON.parse(rawCurr);
-      currencySymbol = parsed?.symbol || DEFAULT_CURRENCY.symbol;
-    }
-  } catch {}
-
   const todayStr = toISODate(new Date());
   let totalBalance = 0;
   let todaySpent = 0;
@@ -329,6 +384,7 @@ export async function logPresetTransactionFromWidget(
     type: t.type,
     amount: t.amount,
     category: t.category,
+    budgetGroup: t.type === "expense" ? t.budgetGroup || getDefaultBudgetGroup(t.category) : undefined,
     note: t.note || "",
     date: t.date,
   }));
@@ -339,6 +395,7 @@ export async function logPresetTransactionFromWidget(
     todaySpent,
     todayIncome,
     recentTxns,
+    budgetSummary: await getWidgetBudgetSummary(updatedTxns, currencyCode),
   };
 
   await AsyncStorage.setItem(

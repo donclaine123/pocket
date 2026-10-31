@@ -6,6 +6,8 @@ import {
   ImageWidget,
 } from "react-native-android-widget";
 import { DEFAULT_CURRENCY } from "../constants/currencies";
+import { BudgetGroup } from "../types/transaction";
+import { SalaryBudgetSummary } from "../services/salaryBudget";
 import { POCKET_LOGO_BASE64 } from "./logoAsset";
 
 /**
@@ -117,11 +119,13 @@ export interface WidgetDataProps {
   todaySpent: number;
   todayIncome?: number;
   isDark?: boolean;
+  budgetSummary?: SalaryBudgetSummary;
   recentTxns: Array<{
     id: string;
     type: "expense" | "income";
     amount: number;
     category: string;
+    budgetGroup?: BudgetGroup;
     note: string;
     date?: string;
   }>;
@@ -138,6 +142,18 @@ function formatAmount(num: number, symbol: string): string {
     maximumFractionDigits: 2,
   });
   return isNegative ? `-${symbol}${formatted}` : `${symbol}${formatted}`;
+}
+
+function formatBudgetWidgetLine(summary: SalaryBudgetSummary | undefined, symbol: string): string {
+  if (!summary || summary.salaryIncome <= 0) return "Log Salary to see budget";
+  const amount = (value: number) => `${symbol}${Math.round(value).toLocaleString("en-US")}`;
+  return `N ${amount(summary.needsSpent)}/${amount(summary.needsBudget)} · W ${amount(summary.wantsSpent)}/${amount(summary.wantsBudget)}`;
+}
+
+function isOverMonthlyBudget(summary?: SalaryBudgetSummary): boolean {
+  return Boolean(summary && summary.salaryIncome > 0 && (
+    summary.needsSpent > summary.needsBudget || summary.wantsSpent > summary.wantsBudget
+  ));
 }
 
 /**
@@ -289,6 +305,7 @@ export function Balance2x1Widget(props: Partial<WidgetDataProps>) {
     currencySymbol = DEFAULT_CURRENCY.symbol,
     totalBalance = 0,
     todaySpent = 0,
+    budgetSummary,
   } = props;
   const isDark = resolveIsDark(props.isDark);
   const theme = getWidgetTheme(isDark);
@@ -382,6 +399,17 @@ export function Balance2x1Widget(props: Partial<WidgetDataProps>) {
                 marginTop: 1,
               }}
             />
+            <TextWidget
+              text={formatBudgetWidgetLine(budgetSummary, currencySymbol)}
+              style={{
+                fontSize: 6.5,
+                fontWeight: "bold",
+                color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+                marginTop: 2,
+              }}
+              maxLines={1}
+              truncate="END"
+            />
           </FlexWidget>
 
           {/* Right Column: 1-Tap "+" Action with Brutalist Shadow */}
@@ -437,6 +465,7 @@ export function Banner4x1Widget(props: Partial<WidgetDataProps>) {
     currencySymbol = DEFAULT_CURRENCY.symbol,
     totalBalance = 0,
     todaySpent = 0,
+    budgetSummary,
   } = props;
   const isDark = resolveIsDark(props.isDark);
   const theme = getWidgetTheme(isDark);
@@ -523,6 +552,17 @@ export function Banner4x1Widget(props: Partial<WidgetDataProps>) {
                   marginTop: 1,
                 }}
               />
+              <TextWidget
+                text={formatBudgetWidgetLine(budgetSummary, currencySymbol)}
+                style={{
+                  fontSize: 6.5,
+                  fontWeight: "bold",
+                  color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+                  marginTop: 1,
+                }}
+                maxLines={1}
+                truncate="END"
+              />
             </FlexWidget>
 
             {/* Divider */}
@@ -607,6 +647,7 @@ export function Glance2x2Widget(props: Partial<WidgetDataProps>) {
     totalBalance = 0,
     todaySpent = 0,
     recentTxns = [],
+    budgetSummary,
   } = props;
   const isDark = resolveIsDark(props.isDark);
   const theme = getWidgetTheme(isDark);
@@ -731,6 +772,18 @@ export function Glance2x2Widget(props: Partial<WidgetDataProps>) {
             </FlexWidget>
           </FlexWidget>
 
+          <TextWidget
+            text={formatBudgetWidgetLine(budgetSummary, currencySymbol)}
+            style={{
+              fontSize: 6.5,
+              fontWeight: "bold",
+              color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+              marginVertical: 1,
+            }}
+            maxLines={1}
+            truncate="END"
+          />
+
           {/* Recent Activity Card */}
           <FlexWidget
             style={{
@@ -787,7 +840,7 @@ export function Glance2x2Widget(props: Partial<WidgetDataProps>) {
                       truncate="END"
                     />
                     <TextWidget
-                      text={getCategoryLabel(t.category)}
+                      text={t.budgetGroup ? `${getCategoryLabel(t.category)} · ${t.budgetGroup === "needs" ? "Need" : "Want"}` : getCategoryLabel(t.category)}
                       style={{
                         fontSize: 7,
                         fontWeight: "bold",
@@ -874,6 +927,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
     totalBalance = 0,
     todaySpent = 0,
     recentTxns = [],
+    budgetSummary,
   } = props;
   const isDark = resolveIsDark(props.isDark);
   const theme = getWidgetTheme(isDark);
@@ -1006,6 +1060,17 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
                     marginTop: 1,
                   }}
                 />
+                <TextWidget
+                  text={formatBudgetWidgetLine(budgetSummary, currencySymbol)}
+                  style={{
+                    fontSize: 6.5,
+                    fontWeight: "bold",
+                    color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+                    marginTop: 2,
+                  }}
+                  maxLines={1}
+                  truncate="END"
+                />
               </FlexWidget>
             </FlexWidget>
           </FlexWidget>
@@ -1108,7 +1173,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
                       />
                       {displayTxns.length <= 2 && (
                         <TextWidget
-                          text={getCategoryLabel(t.category)}
+                          text={t.budgetGroup ? `${getCategoryLabel(t.category)} · ${t.budgetGroup === "needs" ? "Need" : "Want"}` : getCategoryLabel(t.category)}
                           style={{
                             fontSize: 6.5,
                             fontWeight: "bold",
@@ -1212,6 +1277,7 @@ export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
     todaySpent = 0,
     todayIncome = 0,
     recentTxns = [],
+    budgetSummary,
   } = props;
   const isDark = resolveIsDark(props.isDark);
   const theme = getWidgetTheme(isDark);
@@ -1474,6 +1540,18 @@ export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
             </FlexWidget>
           </FlexWidget>
 
+          <TextWidget
+            text={formatBudgetWidgetLine(budgetSummary, currencySymbol)}
+            style={{
+              fontSize: 7,
+              fontWeight: "bold",
+              color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+              marginVertical: 3,
+            }}
+            maxLines={1}
+            truncate="END"
+          />
+
           {/* 3. Notebook Recent Entries List - spans 100% width and evenly fills height */}
           <FlexWidget
             style={{
@@ -1563,7 +1641,7 @@ export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
                     truncate="END"
                   />
                   <TextWidget
-                    text={getCategoryLabel(t.category)}
+                    text={t.budgetGroup ? `${getCategoryLabel(t.category)} · ${t.budgetGroup === "needs" ? "Need" : "Want"}` : getCategoryLabel(t.category)}
                     style={{
                       fontSize: 7,
                       fontWeight: "bold",

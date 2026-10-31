@@ -250,6 +250,7 @@ export async function syncPendingTransactions(): Promise<{ syncedUpserts: number
           type: t.type,
           amount: t.amount,
           category: t.category,
+          budget_group: t.budgetGroup ?? null,
           note: t.note || "",
           date: t.date,
           created_at: t.createdAt || new Date().toISOString(),

@@ -68,7 +68,7 @@ export async function syncGuestTransactionsToAccount(userId: string): Promise<vo
       try {
         const { data } = await supabase
           .from("transactions")
-          .select("id, type, amount, category, note, date, created_at")
+          .select("id, type, amount, category, budget_group, note, date, created_at")
           .eq("user_id", userId);
         if (data) {
           userTxns = data.map((r: any) => ({
@@ -76,6 +76,7 @@ export async function syncGuestTransactionsToAccount(userId: string): Promise<vo
             type: r.type,
             amount: Number(r.amount),
             category: r.category,
+            budgetGroup: r.budget_group === "needs" || r.budget_group === "wants" ? r.budget_group : undefined,
             note: r.note || "",
             date: r.date,
             createdAt: r.created_at,
@@ -166,7 +167,7 @@ function refreshTransactions(userId: string): Promise<Txn[]> {
 
       const { data, error } = await supabase
         .from("transactions")
-        .select("id, type, amount, category, note, date, created_at")
+        .select("id, type, amount, category, budget_group, note, date, created_at")
         .eq("user_id", userId)
         .order("date", { ascending: false })
         .order("created_at", { ascending: false });
@@ -185,6 +186,7 @@ function refreshTransactions(userId: string): Promise<Txn[]> {
         type: r.type,
         amount: Number(r.amount),
         category: r.category,
+        budgetGroup: r.budget_group === "needs" || r.budget_group === "wants" ? r.budget_group : undefined,
         note: r.note || "",
         date: r.date,
         createdAt: r.created_at || r.createdAt,

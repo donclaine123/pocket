@@ -10,11 +10,16 @@ CREATE TABLE IF NOT EXISTS public.transactions (
     type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
     amount NUMERIC(12, 2) NOT NULL,
     category TEXT NOT NULL,
+    budget_group TEXT CHECK (budget_group IN ('needs', 'wants')),
     note TEXT DEFAULT '',
     date DATE NOT NULL,
     created_at TIMESTAMPTZ DEFAULT now() NOT NULL,
     updated_at TIMESTAMPTZ DEFAULT now() NOT NULL
 );
+
+-- Add the optional expense budget group to existing installations.
+ALTER TABLE public.transactions
+    ADD COLUMN IF NOT EXISTS budget_group TEXT CHECK (budget_group IN ('needs', 'wants'));
 
 -- Indexes for fast user queries, range scans, and instant aggregations (100,000+ rows)
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON public.transactions(user_id, date DESC);

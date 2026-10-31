@@ -17,6 +17,7 @@ import { Check, Sparkles, X } from "lucide-react-native";
 import { COLORS, FONTS, STYLES } from "../constants/theme";
 import { safeHaptic } from "../services/haptics";
 import {
+  BudgetGroup,
   CategoryKey,
   EXPENSE_CATEGORIES,
   INCOME_CATEGORIES,
@@ -32,12 +33,14 @@ import {
 } from "../services/storage";
 import { refreshAllWidgets } from "../services/widgetSync";
 import { toISODate } from "../services/dateUtils";
+import { getDefaultBudgetGroup } from "../services/salaryBudget";
 
 export default function QuickAddScreen() {
   const { fromWidget } = useLocalSearchParams<{ fromWidget?: string }>();
   const [type, setType] = useState<TxnType>("expense");
   const [amountStr, setAmountStr] = useState("");
   const [category, setCategory] = useState<CategoryKey>("food_beverage");
+  const [budgetGroup, setBudgetGroup] = useState<BudgetGroup>("wants");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
   const [currency, setCurrency] = useState<CurrencyOption>(DEFAULT_CURRENCY);
@@ -151,6 +154,8 @@ export default function QuickAddScreen() {
         note: note.trim(),
         date: toISODate(now),
         createdAt: now.toISOString(),
+        originalCurrency: currency.code,
+        budgetGroup: type === "expense" ? budgetGroup : undefined,
       };
 
       await saveTransactions([newTxn, ...existing]);
@@ -204,6 +209,7 @@ export default function QuickAddScreen() {
               safeHaptic.selection();
               setType("expense");
               setCategory("food_beverage");
+              setBudgetGroup(getDefaultBudgetGroup("food_beverage"));
             }}
             style={[
               styles.toggleBtn,
@@ -288,6 +294,7 @@ export default function QuickAddScreen() {
                 onPress={() => {
                   safeHaptic.selection();
                   setCategory(c.key);
+                  if (type === "expense") setBudgetGroup(getDefaultBudgetGroup(c.key));
                 }}
                 style={[
                   styles.categoryChip,
@@ -314,6 +321,40 @@ export default function QuickAddScreen() {
             );
           })}
         </ScrollView>
+
+        {type === "expense" ? (
+          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
+            <Text style={styles.sectionLabel}>BUDGET</Text>
+            <View style={{ flexDirection: "row", gap: 6 }}>
+              {([
+                { key: "needs", label: "Need", color: "#2D8C65", bg: "#E3F7EE" },
+                { key: "wants", label: "Want", color: "#D87942", bg: "#FFF0E6" },
+              ] as const).map((group) => {
+                const active = budgetGroup === group.key;
+                return (
+                  <Pressable
+                    key={group.key}
+                    onPress={() => setBudgetGroup(group.key)}
+                    accessibilityRole="radio"
+                    accessibilityState={{ selected: active }}
+                    style={{
+                      borderWidth: active ? 2 : 1,
+                      borderColor: active ? COLORS.ink : "rgba(59,51,48,0.18)",
+                      backgroundColor: active ? group.bg : COLORS.cream,
+                      borderRadius: 8,
+                      paddingHorizontal: 10,
+                      paddingVertical: 5,
+                    }}
+                  >
+                    <Text style={{ fontFamily: FONTS.bodyBold, fontSize: 10, color: group.color }}>
+                      {group.label}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </View>
+          </View>
+        ) : null}
 
         {/* Optional Note Input */}
         <TextInput

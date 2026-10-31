@@ -61,6 +61,7 @@ import { InsightsDonutChart, getCategorySliceColor } from "../components/Insight
 import Svg, { Line, Path } from "react-native-svg";
 import { CloudSyncModal } from "../components/CloudSyncModal";
 import { UpdateModal } from "../components/UpdateModal";
+import { SalaryPlanCard } from "../components/SalaryPlanCard";
 import { supabase } from "../database/supabase";
 import { FlashList } from "@shopify/flash-list";
 import { checkForAppUpdate, APP_VERSION, UpdateCheckResult } from "../services/updateService";
@@ -98,9 +99,11 @@ import {
   syncGuestTransactionsToAccount,
 } from "../services/storage";
 import { updateAllWidgetsFromTxns } from "../services/widgetSync";
+import { getDefaultBudgetGroup, getTransactionBudgetGroup } from "../services/salaryBudget";
 import { CURRENCIES, CurrencyOption, DEFAULT_CURRENCY } from "../constants/currencies";
 import {
   ALL_CATEGORIES,
+  BudgetGroup,
   CATEGORIES,
   Category,
   CategoryKey,
@@ -205,6 +208,7 @@ export default function HomeScreen() {
   const [formType, setFormType] = useState<TxnType>("expense");
   const [formAmount, setFormAmount] = useState("");
   const [formCategory, setFormCategory] = useState<CategoryKey>("food_beverage");
+  const [formBudgetGroup, setFormBudgetGroup] = useState<BudgetGroup>("wants");
   const [formNote, setFormNote] = useState("");
   const [formDate, setFormDate] = useState(getTodayISO());
   const [amountError, setAmountError] = useState<string | null>(null);
@@ -890,14 +894,17 @@ export default function HomeScreen() {
     setFormType(initType);
     setFormAmount("");
     setAmountError(null);
+    let initialCategory: CategoryKey;
     if (selectedTag) {
       const match = (initType === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).find(
         (c) => c.key === selectedTag
       );
-      setFormCategory(match ? selectedTag : initType === "income" ? "salary" : "food_beverage");
+      initialCategory = match ? selectedTag : initType === "income" ? "salary" : "food_beverage";
     } else {
-      setFormCategory(initType === "income" ? "salary" : "food_beverage");
+      initialCategory = initType === "income" ? "salary" : "food_beverage";
     }
+    setFormCategory(initialCategory);
+    setFormBudgetGroup(getDefaultBudgetGroup(initialCategory));
     setFormNote("");
     setFormDate(getTodayISO());
     setModalVisible(true);
@@ -911,6 +918,7 @@ export default function HomeScreen() {
     setFormAmount(t.amount.toString());
     setAmountError(null);
     setFormCategory(t.category);
+    setFormBudgetGroup(t.budgetGroup || getDefaultBudgetGroup(t.category));
     setFormNote(t.note);
     setFormDate(t.date);
     setModalVisible(true);
@@ -977,6 +985,7 @@ export default function HomeScreen() {
               date: formDate,
               createdAt: targetCreatedAt,
               originalCurrency: currency.code,
+              budgetGroup: formType === "expense" ? formBudgetGroup : undefined,
             }
           : t
       );
@@ -993,6 +1002,7 @@ export default function HomeScreen() {
         date: formDate,
         createdAt: targetCreatedAt,
         originalCurrency: currency.code,
+        budgetGroup: formType === "expense" ? formBudgetGroup : undefined,
       };
       const updatedList = [newTxn, ...txns];
       setTxns(updatedList);
@@ -1216,6 +1226,29 @@ export default function HomeScreen() {
                 {cat.label}
               </Text>
             </View>
+
+            {!isIncome ? (
+              <View
+                style={{
+                  paddingHorizontal: 6,
+                  paddingVertical: 2,
+                  borderRadius: 6,
+                  backgroundColor: getTransactionBudgetGroup(t) === "needs" ? "#E3F7EE" : "#FFF0E6",
+                  borderWidth: 1,
+                  borderColor: getTransactionBudgetGroup(t) === "needs" ? "#A9DCC3" : "#F0CCB2",
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: FONTS.bodyBold,
+                    fontSize: 8,
+                    color: getTransactionBudgetGroup(t) === "needs" ? "#2D8C65" : "#D87942",
+                  }}
+                >
+                  {getTransactionBudgetGroup(t) === "needs" ? "Need" : "Want"}
+                </Text>
+              </View>
+            ) : null}
 
             {timeStr ? (
               <View style={styles.txnTimeRow}>
@@ -2322,6 +2355,12 @@ export default function HomeScreen() {
           </Text>
         </NeoCard>
 
+        <SalaryPlanCard
+          transactions={displayTxns}
+          currencySymbol={currency.symbol}
+          onPlanSaved={() => updateAllWidgetsFromTxns(txns, currency.symbol)}
+        />
+
         <NeoCard
           shadowOffsetX={3}
           shadowOffsetY={4}
@@ -3251,9 +3290,11 @@ export default function HomeScreen() {
                 onPress={() => {
                   safeHaptic.selection();
                   setFormType("expense");
-                  if (!EXPENSE_CATEGORIES.some((c) => c.key === formCategory)) {
-                    setFormCategory("food_beverage");
-                  }
+                  const nextCategory = EXPENSE_CATEGORIES.some((c) => c.key === formCategory)
+                    ? formCategory
+                    : "food_beverage";
+                  setFormCategory(nextCategory);
+                  setFormBudgetGroup(getDefaultBudgetGroup(nextCategory));
                 }}
                 style={[
                   styles.toggleBtn,
@@ -3342,6 +3383,9 @@ export default function HomeScreen() {
                     onPress={() => {
                       safeHaptic.selection();
                       setFormCategory(c.key);
+                      if (formType === "expense") {
+                        setFormBudgetGroup(getDefaultBudgetGroup(c.key));
+                      }
                     }}
                     style={[
                       styles.modalCategoryChip,
@@ -3365,6 +3409,40 @@ export default function HomeScreen() {
                 );
               })}
             </View>
+
+            {formType === "expense" ? (
+              <View style={{ marginTop: 12 }}>
+                <Text style={styles.fieldLabel}>Budget group</Text>
+                <View style={{ flexDirection: "row", gap: 8 }}>
+                  {([
+                    { key: "needs", label: "Needs", color: "#2D8C65", bg: "#E3F7EE" },
+                    { key: "wants", label: "Wants", color: "#D87942", bg: "#FFF0E6" },
+                  ] as const).map((group) => {
+                    const active = formBudgetGroup === group.key;
+                    return (
+                      <Pressable
+                        key={group.key}
+                        onPress={() => setFormBudgetGroup(group.key)}
+                        accessibilityRole="radio"
+                        accessibilityState={{ selected: active }}
+                        style={{
+                          paddingHorizontal: 14,
+                          paddingVertical: 7,
+                          borderRadius: 9,
+                          borderWidth: active ? 2 : 1,
+                          borderColor: active ? COLORS.ink : "rgba(59, 51, 48, 0.18)",
+                          backgroundColor: active ? group.bg : COLORS.cream,
+                        }}
+                      >
+                        <Text style={{ fontFamily: FONTS.bodyBold, fontSize: 11, color: group.color }}>
+                          {group.label}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+              </View>
+            ) : null}
 
             {/* Note Input */}
             <Text style={styles.fieldLabel}>Note</Text>

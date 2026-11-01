@@ -145,13 +145,15 @@ function formatAmount(num: number, symbol: string): string {
 }
 
 function formatBudgetWidgetLine(summary: SalaryBudgetSummary | undefined, symbol: string): string {
-  if (!summary || summary.salaryIncome <= 0) return "Log Salary to see budget";
+  if (!summary || (summary.salaryIncome <= 0 && summary.needsBudget <= 0 && summary.wantsBudget <= 0)) {
+    return "Log Salary to see budget";
+  }
   const amount = (value: number) => `${symbol}${Math.round(value).toLocaleString("en-US")}`;
   return `N ${amount(summary.needsSpent)}/${amount(summary.needsBudget)} · W ${amount(summary.wantsSpent)}/${amount(summary.wantsBudget)}`;
 }
 
 function isOverMonthlyBudget(summary?: SalaryBudgetSummary): boolean {
-  return Boolean(summary && summary.salaryIncome > 0 && (
+  return Boolean(summary && (
     summary.needsSpent > summary.needsBudget || summary.wantsSpent > summary.wantsBudget
   ));
 }

@@ -19,6 +19,7 @@ import {
   getDefaultBudgetGroup,
   getMonthlySalaryBudget,
   loadSalaryAllocation,
+  loadSalaryBudgetStartMonth,
 } from "./salaryBudget";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { getPowerSyncDb } from "../database/powersync";
@@ -33,8 +34,9 @@ const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
 const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
 
 async function getWidgetBudgetSummary(txns: Txn[], currencyCode: string) {
-  const [plan, conversionEnabled, rates] = await Promise.all([
+  const [plan, startMonth, conversionEnabled, rates] = await Promise.all([
     loadSalaryAllocation(),
+    loadSalaryBudgetStartMonth(),
     loadConversionEnabled(),
     getCachedRates(),
   ]);
@@ -49,7 +51,7 @@ async function getWidgetBudgetSummary(txns: Txn[], currencyCode: string) {
         ),
       }))
     : txns;
-  return getMonthlySalaryBudget(budgetTxns, plan);
+  return getMonthlySalaryBudget(budgetTxns, plan, undefined, startMonth);
 }
 
 /**

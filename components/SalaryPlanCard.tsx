@@ -9,6 +9,7 @@ import {
   getMonthlySalaryBudget,
   isValidSalaryAllocation,
   loadSalaryAllocation,
+  loadSalaryBudgetStartMonth,
   SalaryAllocationPlan,
   saveSalaryAllocation,
 } from "../services/salaryBudget";
@@ -68,21 +69,23 @@ export function SalaryPlanCard({
   onPlanSaved,
 }: SalaryPlanCardProps) {
   const [plan, setPlan] = useState(DEFAULT_SALARY_ALLOCATION);
+  const [budgetStartMonth, setBudgetStartMonth] = useState<string>();
   const [inputs, setInputs] = useState<PlanInputs>(asInputs(DEFAULT_SALARY_ALLOCATION));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    loadSalaryAllocation().then((saved) => {
+    Promise.all([loadSalaryAllocation(), loadSalaryBudgetStartMonth()]).then(([saved, startMonth]) => {
       setPlan(saved);
       setInputs(asInputs(saved));
+      setBudgetStartMonth(startMonth);
     });
   }, []);
 
   const summary = useMemo(
-    () => getMonthlySalaryBudget(transactions, plan),
-    [transactions, plan]
+    () => getMonthlySalaryBudget(transactions, plan, undefined, budgetStartMonth),
+    [transactions, plan, budgetStartMonth]
   );
   const draft = parseInputs(inputs);
   const totalPercent = Object.values(draft).reduce(
@@ -121,7 +124,7 @@ export function SalaryPlanCard({
     const spent = key === "needs" ? summary.needsSpent : summary.wantsSpent;
     const limit = key === "needs" ? summary.needsBudget : summary.wantsBudget;
     const remaining = limit - spent;
-    const over = summary.salaryIncome > 0 && remaining < 0;
+    const over = remaining < 0;
     const progress = limit > 0 ? Math.min(spent / limit, 1) : 0;
 
     return (
@@ -134,7 +137,7 @@ export function SalaryPlanCard({
           <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: over ? "#D35433" : color }]} />
         </View>
         <Text style={[styles.rowStatus, over && styles.overStatus]}>
-          {summary.salaryIncome === 0
+          {summary.salaryIncome === 0 && limit === 0
             ? "Log income as Salary to activate this budget"
             : over
             ? `Over by ${money(-remaining, currencySymbol)}`
@@ -155,10 +158,12 @@ export function SalaryPlanCard({
         <View style={{ flex: 1 }}>
           <Text style={styles.eyebrow}>MONTHLY SALARY PLAN</Text>
           <Text style={styles.subtitle}>
-            Based on {money(summary.salaryIncome, currencySymbol)} in Salary income
-            {summary.salaryIncomeMonth
-              ? ` · ${summary.salaryIncomeMonth === currentMonth ? "this month" : formatMonth(summary.salaryIncomeMonth)}`
-              : ""}
+            {summary.salaryIncome > 0
+              ? `Salary basis: ${money(summary.salaryIncome, currencySymbol)} · ${summary.salaryIncomeMonth === currentMonth ? "this month" : `from ${formatMonth(summary.salaryIncomeMonth!)}`}`
+              : `Salary this month: ${money(0, currencySymbol)}`}
+          </Text>
+          <Text style={styles.subtitle}>
+            Carryover: Needs {money(summary.needsCarryover, currencySymbol)} · Wants {money(summary.wantsCarryover, currencySymbol)}
           </Text>
         </View>
         <Pressable

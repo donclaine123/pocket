@@ -278,16 +278,18 @@ export function groupTransactionsByDate(
 
     let totalIncome = 0;
     let totalSpent = 0;
+    let adjustments = 0;
     for (const t of list) {
       if (t.type === "income") totalIncome += t.amount;
-      else totalSpent += t.amount;
+      else if (t.type === "expense") totalSpent += t.amount;
+      else adjustments += t.amount;
     }
     return {
       date,
       displayDate: formatFriendlyDate(date),
       totalIncome,
       totalSpent,
-      netFlow: totalIncome - totalSpent,
+      netFlow: totalIncome - totalSpent + adjustments,
       txns: list,
     };
   });
@@ -297,23 +299,24 @@ export function groupTransactionsByDate(
  * Aggregates all transactions by year-month for the history archive.
  */
 export function buildMonthArchives(txns: Txn[]): MonthArchive[] {
-  const map: Record<string, { income: number; spent: number; count: number; date: Date }> = {};
+  const map: Record<string, { income: number; spent: number; adjustments: number; count: number; date: Date }> = {};
 
   for (const t of txns) {
     const key = t.date.slice(0, 7); // e.g. "2026-09"
     if (!map[key]) {
       const d = parseISODate(t.date);
-      map[key] = { income: 0, spent: 0, count: 0, date: d };
+      map[key] = { income: 0, spent: 0, adjustments: 0, count: 0, date: d };
     }
     map[key].count += 1;
     if (t.type === "income") map[key].income += t.amount;
-    else map[key].spent += t.amount;
+    else if (t.type === "expense") map[key].spent += t.amount;
+    else map[key].adjustments += t.amount;
   }
 
   // Ensure current month is represented
   const currentKey = toISODate(new Date()).slice(0, 7);
   if (!map[currentKey]) {
-    map[currentKey] = { income: 0, spent: 0, count: 0, date: new Date() };
+    map[currentKey] = { income: 0, spent: 0, adjustments: 0, count: 0, date: new Date() };
   }
 
   const sortedKeys = Object.keys(map).sort((a, b) => (a < b ? 1 : a > b ? -1 : 0));
@@ -328,7 +331,7 @@ export function buildMonthArchives(txns: Txn[]): MonthArchive[] {
       month: item.date.getMonth(),
       income: item.income,
       spent: item.spent,
-      balance: item.income - item.spent,
+      balance: item.income - item.spent + item.adjustments,
       count: item.count,
     };
   });

@@ -180,6 +180,8 @@ export default function HomeScreen() {
   const horizontalPad = isVeryCompact ? 16 : isCompact ? 22 : 28;
 
   const [txns, setTxns] = useState<Txn[]>([]);
+  const [availableBalance, setAvailableBalance] = useState(0);
+  const [emergencyReserve, setEmergencyReserve] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const scrollRef = useRef<any>(null);
 
@@ -718,11 +720,13 @@ export default function HomeScreen() {
   const scopedTotals = useMemo(() => {
     let income = 0;
     let spent = 0;
+    let adjustments = 0;
     for (const t of scopedTxns) {
       if (t.type === "income") income += t.amount;
-      else spent += t.amount;
+      else if (t.type === "expense") spent += t.amount;
+      else adjustments += t.amount;
     }
-    const balance = income - spent;
+    const balance = income - spent + adjustments;
     const maxBar = Math.max(income, spent, 1);
     return {
       income,
@@ -732,25 +736,6 @@ export default function HomeScreen() {
       spentPct: Math.min(100, Math.max(0, (spent / maxBar) * 100)),
     };
   }, [scopedTxns]);
-
-  // All-time totals for Piggy Bank (independent of active day/week/month period filter)
-  const allTimeTotals = useMemo(() => {
-    let income = 0;
-    let spent = 0;
-    for (const t of displayTxns) {
-      if (t.type === "income") income += t.amount;
-      else spent += t.amount;
-    }
-    const netSavings = income - spent;
-    const savingsRate = income > 0 ? Math.round((Math.max(0, netSavings) / income) * 100) : 0;
-    return {
-      income,
-      spent,
-      netSavings,
-      savingsRate,
-      isPositive: netSavings >= 0,
-    };
-  }, [displayTxns]);
 
   // Category counts and totals for tag navigation (within scoped transactions)
   const categoryStats = useMemo(() => {
@@ -912,6 +897,7 @@ export default function HomeScreen() {
 
   // Open Edit Modal
   const handleOpenEdit = (t: Txn) => {
+    if (t.type === "adjustment") return;
     safeHaptic.selection();
     setEditingTxnId(t.id);
     setFormType(t.type);
@@ -1011,6 +997,24 @@ export default function HomeScreen() {
     }
 
     setModalVisible(false);
+  };
+
+  const handleReconcileAvailable = async (difference: number) => {
+    const now = new Date();
+    const adjustment: Txn = {
+      id: uid(),
+      type: "adjustment",
+      amount: difference,
+      category: "discrepancy",
+      note: "Balance reconciliation",
+      date: toISODate(now),
+      createdAt: now.toISOString(),
+      originalCurrency: currency.code,
+    };
+    const updated = [adjustment, ...txns];
+    setTxns(updated);
+    await saveTransactions(updated);
+    safeHaptic.success();
   };
 
   // Prompt Delete Transaction
@@ -1171,11 +1175,13 @@ export default function HomeScreen() {
     const col = getCategoryColor(t.category);
     const timeStr = getTxnManilaTime(t);
     const isIncome = t.type === "income";
+    const isAdjustment = t.type === "adjustment";
+    const adjustmentIncreasesBalance = isAdjustment && t.amount >= 0;
 
     return (
       <NeoCard
         key={t.id}
-        onPress={() => handleOpenEdit(t)}
+        onPress={isAdjustment ? undefined : () => handleOpenEdit(t)}
         shadowOffsetX={2}
         shadowOffsetY={2}
         borderRadius={18}
@@ -1206,7 +1212,7 @@ export default function HomeScreen() {
             <Text numberOfLines={1} style={styles.txnNote}>
               {t.note}
             </Text>
-            <Edit2 size={12} color={COLORS.inkSoft} style={{ marginLeft: 4 }} />
+            {!isAdjustment ? <Edit2 size={12} color={COLORS.inkSoft} style={{ marginLeft: 4 }} /> : null}
           </View>
           <View style={styles.txnMetaRow}>
             <View
@@ -1227,7 +1233,7 @@ export default function HomeScreen() {
               </Text>
             </View>
 
-            {!isIncome ? (
+            {t.type === "expense" ? (
               <View
                 style={{
                   paddingHorizontal: 6,
@@ -1269,10 +1275,10 @@ export default function HomeScreen() {
           <Text
             style={[
               styles.txnAmount,
-              { color: isIncome ? "#379E75" : "#E26543" },
+              { color: isIncome || adjustmentIncreasesBalance ? "#379E75" : "#E26543" },
             ]}
           >
-            {isIncome ? "+" : "−"}{currency.symbol}{fmt(t.amount)}
+            {isIncome || adjustmentIncreasesBalance ? "+" : "−"}{currency.symbol}{fmt(Math.abs(t.amount))}
           </Text>
           {liveConversionEnabled &&
             t.rawCurrency &&
@@ -2315,9 +2321,7 @@ export default function HomeScreen() {
 
   // Piggy Tab Component - All-time Net Savings
   const renderPiggyTab = () => {
-    const netSavings = allTimeTotals.netSavings;
-    const isPositive = allTimeTotals.isPositive;
-    const savingsRate = allTimeTotals.savingsRate;
+    const isPositive = availableBalance >= 0;
 
     return (
       <ScrollView
@@ -2342,23 +2346,29 @@ export default function HomeScreen() {
           style={[styles.heroCardContent, { marginBottom: 16 }]}
         >
           <View style={styles.cardTopRow}>
-            <Text style={styles.cardEyebrow}>ALL-TIME NET SAVINGS</Text>
+            <Text style={styles.cardEyebrow}>AVAILABLE TO SPEND</Text>
             <View style={[styles.sparkleBadge, { backgroundColor: isPositive ? "#D4F0E3" : "#FFE0D6" }]}>
               <Text style={styles.sparkleText}>{isPositive ? "healthy ✿" : "deficit ✿"}</Text>
             </View>
           </View>
           <Text style={[styles.balanceBigText, { color: isPositive ? "#2D8C65" : "#D35433", marginTop: 8 }]}>
-            {isPositive ? "+" : "−"}{currency.symbol}{fmt(Math.abs(netSavings))}
+            {isPositive ? "" : "−"}{currency.symbol}{fmt(Math.abs(availableBalance))}
           </Text>
           <Text style={[styles.emptySubtitle, { textAlign: "left", marginTop: 4 }]}>
-            Savings rate: {savingsRate}% of total income
+            Emergency reserve excluded: {currency.symbol}{fmt(emergencyReserve)}
           </Text>
         </NeoCard>
 
         <SalaryPlanCard
           transactions={displayTxns}
           currencySymbol={currency.symbol}
+          currencyCode={currency.code}
           onPlanSaved={() => updateAllWidgetsFromTxns(txns, currency.symbol)}
+          onAccountingChange={(available, reserve) => {
+            setAvailableBalance(available);
+            setEmergencyReserve(reserve);
+          }}
+          onReconcile={handleReconcileAvailable}
         />
 
         <NeoCard
@@ -3552,7 +3562,7 @@ export default function HomeScreen() {
             <Text style={styles.confirmTitle}>Remove this entry?</Text>
             {deleteConfirmTxn ? (
               <Text style={styles.confirmSubtitle}>
-                "{deleteConfirmTxn.note}" · {deleteConfirmTxn.type === "income" ? "+" : "−"}{currency.symbol}{fmt(deleteConfirmTxn.amount)}
+                "{deleteConfirmTxn.note}" · {deleteConfirmTxn.type === "income" || (deleteConfirmTxn.type === "adjustment" && deleteConfirmTxn.amount >= 0) ? "+" : "−"}{currency.symbol}{fmt(Math.abs(deleteConfirmTxn.amount))}
               </Text>
             ) : null}
             <View style={styles.confirmButtonsRow}>

@@ -6,7 +6,7 @@ import {
   ImageWidget,
 } from "react-native-android-widget";
 import { DEFAULT_CURRENCY } from "../constants/currencies";
-import { BudgetGroup } from "../types/transaction";
+import { BudgetGroup, TxnKind } from "../types/transaction";
 import { SalaryBudgetSummary } from "../services/salaryBudget";
 import { POCKET_LOGO_BASE64 } from "./logoAsset";
 
@@ -122,7 +122,7 @@ export interface WidgetDataProps {
   budgetSummary?: SalaryBudgetSummary;
   recentTxns: Array<{
     id: string;
-    type: "expense" | "income";
+    type: TxnKind;
     amount: number;
     category: string;
     budgetGroup?: BudgetGroup;
@@ -183,6 +183,7 @@ function getCategoryEmoji(category: string, note?: string): string {
     freelance: "💻",
     gift: "🎁",
     bonus: "💰",
+    discrepancy: "⚖️",
   };
   return map[category] || "🛍️";
 }
@@ -205,6 +206,7 @@ function getCategoryLabel(category: string): string {
     freelance: "Freelance",
     gift: "Gift",
     bonus: "Bonus",
+    discrepancy: "Discrepancy",
   };
   return map[category] || "Shopping";
 }
@@ -393,7 +395,7 @@ export function Balance2x1Widget(props: Partial<WidgetDataProps>) {
             />
 
             <TextWidget
-              text={`Total: ${formatAmount(totalBalance, currencySymbol)}`}
+              text={`Available: ${formatAmount(totalBalance, currencySymbol)}`}
               style={{
                 fontSize: 9,
                 fontWeight: "500",
@@ -589,7 +591,7 @@ export function Banner4x1Widget(props: Partial<WidgetDataProps>) {
                 }}
               />
               <TextWidget
-                text={`Total: ${formatAmount(totalBalance, currencySymbol)}`}
+                text={`Available: ${formatAmount(totalBalance, currencySymbol)}`}
                 style={{
                   fontSize: 9,
                   fontWeight: "bold",
@@ -722,12 +724,14 @@ export function Glance2x2Widget(props: Partial<WidgetDataProps>) {
               />
             </FlexWidget>
             <TextWidget
-              text={formatAmount(totalBalance, currencySymbol)}
+              text={`Available ${formatAmount(totalBalance, currencySymbol)}`}
               style={{
-                fontSize: 11,
+                fontSize: 9,
                 fontWeight: "bold",
                 color: theme.textPrimary,
               }}
+              maxLines={1}
+              truncate="END"
             />
           </FlexWidget>
 
@@ -853,11 +857,11 @@ export function Glance2x2Widget(props: Partial<WidgetDataProps>) {
                   </FlexWidget>
 
                   <TextWidget
-                    text={`${t.type === "income" ? "+" : "-"}${currencySymbol}${t.amount.toFixed(0)}`}
+                    text={`${t.type === "income" || (t.type === "adjustment" && t.amount >= 0) ? "+" : "−"}${currencySymbol}${Math.abs(t.amount).toFixed(0)}`}
                     style={{
                       fontSize: 10,
                       fontWeight: "bold",
-                      color: t.type === "income" ? theme.sage : theme.coral,
+                      color: t.type === "income" || (t.type === "adjustment" && t.amount >= 0) ? theme.sage : theme.coral,
                       marginLeft: 4,
                     }}
                   />
@@ -1004,7 +1008,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
               </FlexWidget>
 
               <TextWidget
-                text="TOTAL BALANCE"
+                text="AVAILABLE TO SPEND"
                 style={{
                   fontSize: 7.5,
                   fontWeight: "bold",
@@ -1186,11 +1190,11 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
                     </FlexWidget>
 
                     <TextWidget
-                      text={`${t.type === "income" ? "+" : "-"}${currencySymbol}${t.amount.toFixed(0)}`}
+                      text={`${t.type === "income" || (t.type === "adjustment" && t.amount >= 0) ? "+" : "−"}${currencySymbol}${Math.abs(t.amount).toFixed(0)}`}
                       style={{
                         fontSize: displayTxns.length > 2 ? 9 : 10,
                         fontWeight: "bold",
-                        color: t.type === "income" ? theme.sage : theme.coral,
+                        color: t.type === "income" || (t.type === "adjustment" && t.amount >= 0) ? theme.sage : theme.coral,
                         marginLeft: 4,
                       }}
                     />
@@ -1365,7 +1369,7 @@ export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
                 />
               </FlexWidget>
               <TextWidget
-                text="DAILY EXPENSE TRACKER"
+                text={`AVAILABLE ${formatAmount(totalBalance, currencySymbol)}`}
                 style={{
                   fontSize: 7.5,
                   fontWeight: "bold",
@@ -1373,6 +1377,8 @@ export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
                   letterSpacing: 0.5,
                   marginTop: 1,
                 }}
+                maxLines={1}
+                truncate="END"
               />
             </FlexWidget>
 
@@ -1654,11 +1660,11 @@ export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
 
                 {/* Amount */}
                 <TextWidget
-                  text={`${t.type === "income" ? "+" : "-"}${currencySymbol}${t.amount.toFixed(2)}`}
+                  text={`${t.type === "income" || (t.type === "adjustment" && t.amount >= 0) ? "+" : "−"}${currencySymbol}${Math.abs(t.amount).toFixed(2)}`}
                   style={{
                     fontSize: 10,
                     fontWeight: "bold",
-                    color: t.type === "income" ? theme.sage : theme.coral,
+                    color: t.type === "income" || (t.type === "adjustment" && t.amount >= 0) ? theme.sage : theme.coral,
                     marginLeft: 4,
                   }}
                 />

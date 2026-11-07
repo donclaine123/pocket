@@ -1,6 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getActiveUserId } from "./syncQueue";
 import { BudgetGroup, CategoryKey, Txn } from "../types/transaction";
+import { DEFAULT_CURRENCY } from "../constants/currencies";
+import { convertAmount, getCachedRates, loadConversionEnabled } from "./exchangeService";
 
 export type SalaryAllocationPlan = {
   needs: number;
@@ -26,6 +28,34 @@ export const DEFAULT_SALARY_ALLOCATION: SalaryAllocationPlan = {
   savings: 20,
   buffer: 0,
 };
+
+async function getReserveCorrectionKey(): Promise<string> {
+  const userId = await getActiveUserId();
+  return userId ? `@pocket_reserve_correction_${userId}` : "@pocket_reserve_correction_guest";
+}
+
+export async function loadEmergencyReserveCorrection(currencyCode = DEFAULT_CURRENCY.code): Promise<number> {
+  try {
+    const raw = await AsyncStorage.getItem(await getReserveCorrectionKey());
+    if (!raw) return 0;
+    const saved = JSON.parse(raw);
+    const amount = typeof saved === "number" ? saved : Number(saved.amount);
+    if (!Number.isFinite(amount)) return 0;
+    const sourceCurrency = typeof saved === "number" ? currencyCode : saved.currencyCode || currencyCode;
+    if (sourceCurrency === currencyCode || !(await loadConversionEnabled())) return amount;
+    return convertAmount(amount, sourceCurrency, currencyCode, await getCachedRates());
+  } catch {
+    return 0;
+  }
+}
+
+export async function saveEmergencyReserveCorrection(amount: number, currencyCode = DEFAULT_CURRENCY.code): Promise<void> {
+  if (!Number.isFinite(amount)) throw new Error("Reserve correction must be a number.");
+  await AsyncStorage.setItem(
+    await getReserveCorrectionKey(),
+    JSON.stringify({ amount, currencyCode })
+  );
+}
 
 async function getSalaryAllocationKey(): Promise<string> {
   const userId = await getActiveUserId();

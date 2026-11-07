@@ -173,6 +173,16 @@ export const CATEGORY_COLORS: Record<string, CategoryColor> = {
     bg: "#A855F7",
     text: "#FFFDF7",
   },
+  discrepancy: {
+    key: "discrepancy",
+    color: "#64748B",
+    pillBg: "#F1F5F9",
+    pillBorder: "#CBD5E1",
+    pillText: "#334155",
+    contrastText: "#FFFDF7",
+    bg: "#64748B",
+    text: "#FFFDF7",
+  },
 
   // Legacy categories
   coffee: {

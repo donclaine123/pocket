@@ -7,7 +7,7 @@
 CREATE TABLE IF NOT EXISTS public.transactions (
     id TEXT PRIMARY KEY,
     user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
-    type TEXT NOT NULL CHECK (type IN ('income', 'expense')),
+    type TEXT NOT NULL CHECK (type IN ('income', 'expense', 'adjustment')),
     amount NUMERIC(12, 2) NOT NULL,
     category TEXT NOT NULL,
     budget_group TEXT CHECK (budget_group IN ('needs', 'wants')),
@@ -20,6 +20,11 @@ CREATE TABLE IF NOT EXISTS public.transactions (
 -- Add the optional expense budget group to existing installations.
 ALTER TABLE public.transactions
     ADD COLUMN IF NOT EXISTS budget_group TEXT CHECK (budget_group IN ('needs', 'wants'));
+
+-- Allow signed balance-reconciliation entries on existing installations.
+ALTER TABLE public.transactions DROP CONSTRAINT IF EXISTS transactions_type_check;
+ALTER TABLE public.transactions
+    ADD CONSTRAINT transactions_type_check CHECK (type IN ('income', 'expense', 'adjustment'));
 
 -- Indexes for fast user queries, range scans, and instant aggregations (100,000+ rows)
 CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON public.transactions(user_id, date DESC);

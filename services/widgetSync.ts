@@ -12,6 +12,7 @@ import {
   WidgetDataProps,
 } from "../widgets/PocketWidgets";
 import { Txn, CategoryKey } from "../types/transaction";
+import { getAvailableBalance } from "./accounting";
 import { toISODate } from "./dateUtils";
 import { DEFAULT_CURRENCY } from "../constants/currencies";
 import { convertAmount, getCachedRates, loadConversionEnabled } from "./exchangeService";
@@ -20,6 +21,7 @@ import {
   getMonthlySalaryBudget,
   loadSalaryAllocation,
   loadSalaryBudgetStartMonth,
+  loadEmergencyReserveCorrection,
 } from "./salaryBudget";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { getPowerSyncDb } from "../database/powersync";
@@ -33,12 +35,13 @@ export const WIDGET_DATA_STORAGE_KEY = "@pocket_widget_data";
 const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
 const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
 
-async function getWidgetBudgetSummary(txns: Txn[], currencyCode: string) {
-  const [plan, startMonth, conversionEnabled, rates] = await Promise.all([
+async function getWidgetAccounting(txns: Txn[], currencyCode: string) {
+  const [plan, startMonth, conversionEnabled, rates, reserveCorrection] = await Promise.all([
     loadSalaryAllocation(),
     loadSalaryBudgetStartMonth(),
     loadConversionEnabled(),
     getCachedRates(),
+    loadEmergencyReserveCorrection(currencyCode),
   ]);
   const budgetTxns = conversionEnabled
     ? txns.map((txn) => ({
@@ -51,7 +54,11 @@ async function getWidgetBudgetSummary(txns: Txn[], currencyCode: string) {
         ),
       }))
     : txns;
-  return getMonthlySalaryBudget(budgetTxns, plan, undefined, startMonth);
+  return {
+    txns: budgetTxns,
+    totalBalance: getAvailableBalance(budgetTxns, plan, reserveCorrection),
+    budgetSummary: getMonthlySalaryBudget(budgetTxns, plan, undefined, startMonth),
+  };
 }
 
 /**
@@ -122,25 +129,16 @@ export async function updateAllWidgetsFromTxns(
 
     const todayStr = toISODate(new Date());
 
-    let totalBalance = 0;
+    const accounting = await getWidgetAccounting(txns, currencyCode);
     let todaySpent = 0;
     let todayIncome = 0;
 
-    for (const t of txns) {
-      if (t.type === "income") {
-        totalBalance += t.amount;
-        if (t.date.startsWith(todayStr)) {
-          todayIncome += t.amount;
-        }
-      } else {
-        totalBalance -= t.amount;
-        if (t.date.startsWith(todayStr)) {
-          todaySpent += t.amount;
-        }
-      }
+    for (const t of accounting.txns) {
+      if (t.date.startsWith(todayStr) && t.type === "income") todayIncome += t.amount;
+      if (t.date.startsWith(todayStr) && t.type === "expense") todaySpent += t.amount;
     }
 
-    const recentTxns = txns.slice(0, 5).map((t) => ({
+    const recentTxns = accounting.txns.slice(0, 5).map((t) => ({
       id: t.id,
       type: t.type,
       amount: t.amount,
@@ -149,18 +147,16 @@ export async function updateAllWidgetsFromTxns(
       note: t.note || "",
       date: t.date,
     }));
-    const budgetSummary = await getWidgetBudgetSummary(txns, currencyCode);
-
     const isDark = Appearance.getColorScheme() === "dark";
 
     const widgetData: WidgetDataProps = {
       currencySymbol,
-      totalBalance,
+      totalBalance: accounting.totalBalance,
       todaySpent,
       todayIncome,
       isDark,
       recentTxns,
-      budgetSummary,
+      budgetSummary: accounting.budgetSummary,
     };
 
     // Cache locally for fast subsequent reads
@@ -225,7 +221,29 @@ export async function refreshAllWidgets(forcedIsDark?: boolean): Promise<void> {
     if (rawTransactions) {
       const parsed = JSON.parse(rawTransactions);
       if (Array.isArray(parsed)) {
-        widgetData.budgetSummary = await getWidgetBudgetSummary(parsed, currencyCode);
+        const accounting = await getWidgetAccounting(parsed, currencyCode);
+        const todayStr = toISODate(new Date());
+        widgetData.totalBalance = accounting.totalBalance;
+        widgetData.budgetSummary = accounting.budgetSummary;
+        widgetData.todayIncome = accounting.txns.reduce(
+          (total, txn) => total + (txn.date.startsWith(todayStr) && txn.type === "income" ? txn.amount : 0),
+          0
+        );
+        widgetData.todaySpent = accounting.txns.reduce(
+          (total, txn) => total + (txn.date.startsWith(todayStr) && txn.type === "expense" ? txn.amount : 0),
+          0
+        );
+        widgetData.recentTxns = accounting.txns.slice(0, 5).map((txn) => ({
+          id: txn.id,
+          type: txn.type,
+          amount: txn.amount,
+          category: txn.category,
+          budgetGroup: txn.type === "expense"
+            ? txn.budgetGroup || getDefaultBudgetGroup(txn.category)
+            : undefined,
+          note: txn.note || "",
+          date: txn.date,
+        }));
       }
     }
 
@@ -363,25 +381,16 @@ export async function logPresetTransactionFromWidget(
 
   // Recalculate metrics
   const todayStr = toISODate(new Date());
-  let totalBalance = 0;
+  const accounting = await getWidgetAccounting(updatedTxns, currencyCode);
   let todaySpent = 0;
   let todayIncome = 0;
 
-  for (const t of updatedTxns) {
-    if (t.type === "income") {
-      totalBalance += t.amount;
-      if (t.date.startsWith(todayStr)) {
-        todayIncome += t.amount;
-      }
-    } else {
-      totalBalance -= t.amount;
-      if (t.date.startsWith(todayStr)) {
-        todaySpent += t.amount;
-      }
-    }
+  for (const t of accounting.txns) {
+    if (t.date.startsWith(todayStr) && t.type === "income") todayIncome += t.amount;
+    if (t.date.startsWith(todayStr) && t.type === "expense") todaySpent += t.amount;
   }
 
-  const recentTxns = updatedTxns.slice(0, 5).map((t) => ({
+  const recentTxns = accounting.txns.slice(0, 5).map((t) => ({
     id: t.id,
     type: t.type,
     amount: t.amount,
@@ -393,11 +402,11 @@ export async function logPresetTransactionFromWidget(
 
   const widgetData: WidgetDataProps = {
     currencySymbol,
-    totalBalance,
+    totalBalance: accounting.totalBalance,
     todaySpent,
     todayIncome,
     recentTxns,
-    budgetSummary: await getWidgetBudgetSummary(updatedTxns, currencyCode),
+    budgetSummary: accounting.budgetSummary,
   };
 
   await AsyncStorage.setItem(

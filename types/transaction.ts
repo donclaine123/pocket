@@ -1,4 +1,5 @@
 export type TxnType = "expense" | "income";
+export type TxnKind = TxnType | "adjustment";
 export type BudgetGroup = "needs" | "wants";
 
 export type CategoryKey =
@@ -20,6 +21,7 @@ export type CategoryKey =
   | "investments"
   | "selling"
   | "other_income"
+  | "discrepancy"
   // Legacy backward-compatibility tags
   | "coffee"
   | "dining"
@@ -36,7 +38,7 @@ export type Category = {
 
 export type Txn = {
   id: string;
-  type: TxnType;
+  type: TxnKind;
   amount: number;
   category: CategoryKey;
   budgetGroup?: BudgetGroup;
@@ -86,6 +88,7 @@ export const CATEGORIES: Category[] = [
 export const ALL_CATEGORIES: Category[] = [
   ...CATEGORIES,
   ...LEGACY_CATEGORIES,
+  { key: "discrepancy", label: "Discrepancy", emoji: "⚖️", bg: "discrepancy", rotate: "0deg", type: "expense" },
 ];
 
 function thisMonthDate(day: number): string {

@@ -280,9 +280,10 @@ export function groupTransactionsByDate(
     let totalSpent = 0;
     let adjustments = 0;
     for (const t of list) {
-      if (t.type === "income") totalIncome += t.amount;
+      if (t.type === "adjustment") adjustments += t.amount;
+      else if (t.category === "discrepancy") adjustments += t.type === "income" ? t.amount : -t.amount;
+      else if (t.type === "income") totalIncome += t.amount;
       else if (t.type === "expense") totalSpent += t.amount;
-      else adjustments += t.amount;
     }
     return {
       date,
@@ -308,9 +309,11 @@ export function buildMonthArchives(txns: Txn[]): MonthArchive[] {
       map[key] = { income: 0, spent: 0, adjustments: 0, count: 0, date: d };
     }
     map[key].count += 1;
-    if (t.type === "income") map[key].income += t.amount;
+    if (t.type === "adjustment") map[key].adjustments += t.amount;
+    else if (t.category === "discrepancy") {
+      map[key].adjustments += t.type === "income" ? t.amount : -t.amount;
+    } else if (t.type === "income") map[key].income += t.amount;
     else if (t.type === "expense") map[key].spent += t.amount;
-    else map[key].adjustments += t.amount;
   }
 
   // Ensure current month is represented

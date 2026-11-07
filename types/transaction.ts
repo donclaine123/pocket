@@ -72,6 +72,19 @@ export const INCOME_CATEGORIES: Category[] = [
   { key: "other_income", label: "Other Income", emoji: "🪙", bg: "other_income", rotate: "2deg", type: "income" },
 ];
 
+export const DISCREPANCY_CATEGORY: Category = {
+  key: "discrepancy",
+  label: "Discrepancy",
+  emoji: "⚖️",
+  bg: "discrepancy",
+  rotate: "0deg",
+  type: "expense",
+};
+
+export function getEntryCategories(type: TxnType): Category[] {
+  return [...(type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES), DISCREPANCY_CATEGORY];
+}
+
 export const LEGACY_CATEGORIES: Category[] = [
   { key: "coffee", label: "Coffee", emoji: "☕", bg: "coffee", rotate: "-4deg", type: "expense" },
   { key: "dining", label: "Food & Dining", emoji: "🍽️", bg: "dining", rotate: "3deg", type: "expense" },
@@ -82,13 +95,13 @@ export const LEGACY_CATEGORIES: Category[] = [
 export const CATEGORIES: Category[] = [
   ...EXPENSE_CATEGORIES,
   ...INCOME_CATEGORIES,
+  DISCREPANCY_CATEGORY,
 ];
 
 // Complete category catalog including legacy tags for backward-compatible rendering
 export const ALL_CATEGORIES: Category[] = [
   ...CATEGORIES,
   ...LEGACY_CATEGORIES,
-  { key: "discrepancy", label: "Discrepancy", emoji: "⚖️", bg: "discrepancy", rotate: "0deg", type: "expense" },
 ];
 
 function thisMonthDate(day: number): string {

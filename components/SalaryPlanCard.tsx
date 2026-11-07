@@ -4,10 +4,7 @@ import { Check, Pencil, X } from "lucide-react-native";
 import { NeoCard } from "./NeoCard";
 import { COLORS, FONTS } from "../constants/theme";
 import { Txn } from "../types/transaction";
-import {
-  getEmergencyReserve,
-  getAvailableBalance,
-} from "../services/accounting";
+import { getAvailableBalance } from "../services/accounting";
 import {
   DEFAULT_SALARY_ALLOCATION,
   getMonthlySalaryBudget,
@@ -16,8 +13,6 @@ import {
   loadSalaryBudgetStartMonth,
   SalaryAllocationPlan,
   saveSalaryAllocation,
-  loadEmergencyReserveCorrection,
-  saveEmergencyReserveCorrection,
 } from "../services/salaryBudget";
 
 type PlanKey = keyof SalaryAllocationPlan;
@@ -26,10 +21,8 @@ type PlanInputs = Record<PlanKey, string>;
 interface SalaryPlanCardProps {
   transactions: Txn[];
   currencySymbol: string;
-  currencyCode: string;
   onPlanSaved: () => Promise<void>;
-  onAccountingChange: (available: number, reserve: number) => void;
-  onReconcile: (difference: number) => Promise<void>;
+  onAccountingChange: (available: number) => void;
 }
 
 const PLAN_ROWS: { key: PlanKey; label: string; color: string }[] = [
@@ -75,10 +68,8 @@ function formatMonth(month: string): string {
 export function SalaryPlanCard({
   transactions,
   currencySymbol,
-  currencyCode,
   onPlanSaved,
   onAccountingChange,
-  onReconcile,
 }: SalaryPlanCardProps) {
   const [plan, setPlan] = useState(DEFAULT_SALARY_ALLOCATION);
   const [budgetStartMonth, setBudgetStartMonth] = useState<string>();
@@ -86,36 +77,23 @@ export function SalaryPlanCard({
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [reserveCorrection, setReserveCorrection] = useState(0);
-  const [reserveInput, setReserveInput] = useState("");
-  const [availableInput, setAvailableInput] = useState("");
-  const [accountingError, setAccountingError] = useState<string | null>(null);
-  const [savingReserve, setSavingReserve] = useState(false);
-  const [reconciling, setReconciling] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      loadSalaryAllocation(),
-      loadSalaryBudgetStartMonth(),
-      loadEmergencyReserveCorrection(currencyCode),
-    ]).then(([saved, startMonth, correction]) => {
+    Promise.all([loadSalaryAllocation(), loadSalaryBudgetStartMonth()]).then(([saved, startMonth]) => {
       setPlan(saved);
       setInputs(asInputs(saved));
       setBudgetStartMonth(startMonth);
-      setReserveCorrection(correction);
     });
-  }, [currencyCode]);
+  }, []);
 
   const summary = useMemo(
     () => getMonthlySalaryBudget(transactions, plan, undefined, budgetStartMonth),
     [transactions, plan, budgetStartMonth]
   );
-  const emergencyReserve = getEmergencyReserve(transactions, plan, reserveCorrection);
-  const availableBalance = getAvailableBalance(transactions, plan, reserveCorrection);
-  const calculatedReserve = getEmergencyReserve(transactions, plan, 0);
+  const availableBalance = getAvailableBalance(transactions, plan);
   useEffect(() => {
-    onAccountingChange(availableBalance, emergencyReserve);
-  }, [availableBalance, emergencyReserve]);
+    onAccountingChange(availableBalance);
+  }, [availableBalance]);
   const draft = parseInputs(inputs);
   const totalPercent = Object.values(draft).reduce(
     (total, value) => total + (Number.isFinite(value) ? value : 0),
@@ -141,50 +119,6 @@ export function SalaryPlanCard({
       setError("Could not save your salary plan. Please try again.");
     } finally {
       setSaving(false);
-    }
-  };
-
-  const handleSaveReserve = async () => {
-    const actualReserve = Number(reserveInput);
-    if (!reserveInput.trim() || !Number.isFinite(actualReserve) || actualReserve < 0 || savingReserve) {
-      setAccountingError("Enter a reserve amount of zero or more.");
-      return;
-    }
-    setSavingReserve(true);
-    setAccountingError(null);
-    try {
-      const correction = Math.round((actualReserve - calculatedReserve) * 100) / 100;
-      await saveEmergencyReserveCorrection(correction, currencyCode);
-      setReserveCorrection(correction);
-      setReserveInput("");
-      await onPlanSaved();
-    } catch {
-      setAccountingError("Could not save the reserve amount. Please try again.");
-    } finally {
-      setSavingReserve(false);
-    }
-  };
-
-  const handleReconcile = async () => {
-    const actualAvailable = Number(availableInput);
-    if (!availableInput.trim() || !Number.isFinite(actualAvailable) || actualAvailable < 0 || reconciling) {
-      setAccountingError("Enter an available amount of zero or more.");
-      return;
-    }
-    const difference = Math.round((actualAvailable - availableBalance) * 100) / 100;
-    if (Math.abs(difference) < 0.005) {
-      setAccountingError("Your available amount already matches.");
-      return;
-    }
-    setReconciling(true);
-    setAccountingError(null);
-    try {
-      await onReconcile(difference);
-      setAvailableInput("");
-    } catch {
-      setAccountingError("Could not reconcile the balance. Please try again.");
-    } finally {
-      setReconciling(false);
     }
   };
 
@@ -251,52 +185,6 @@ export function SalaryPlanCard({
         >
           {editing ? <X size={16} color={COLORS.ink} /> : <Pencil size={15} color={COLORS.ink} />}
         </Pressable>
-      </View>
-
-      <View style={styles.reservePanel}>
-        <View style={styles.rowHeading}>
-          <Text style={styles.reserveTitle}>Emergency reserve</Text>
-          <Text style={styles.reserveAmount}>{money(emergencyReserve, currencySymbol)}</Text>
-        </View>
-        <Text style={styles.rowStatus}>Savings from all Salary entries, kept outside your spendable balance.</Text>
-        <View style={styles.accountingActionRow}>
-          <TextInput
-            value={reserveInput}
-            onChangeText={(value) => {
-              setReserveInput(value);
-              setAccountingError(null);
-            }}
-            keyboardType="decimal-pad"
-            placeholder="Actual reserve"
-            accessibilityLabel="Actual emergency reserve"
-            style={styles.accountingInput}
-          />
-          <Pressable onPress={handleSaveReserve} disabled={savingReserve} style={styles.accountingButton}>
-            <Text style={styles.accountingButtonText}>{savingReserve ? "Saving" : "Set reserve"}</Text>
-          </Pressable>
-        </View>
-      </View>
-
-      <View style={styles.reconcilePanel}>
-        <Text style={styles.reserveTitle}>Reconcile available money</Text>
-        <Text style={styles.rowStatus}>Match cash, bank, and e-wallet money you can spend. The difference is saved as Discrepancy.</Text>
-        <View style={styles.accountingActionRow}>
-          <TextInput
-            value={availableInput}
-            onChangeText={(value) => {
-              setAvailableInput(value);
-              setAccountingError(null);
-            }}
-            keyboardType="decimal-pad"
-            placeholder="Actual available amount"
-            accessibilityLabel="Actual available-to-spend amount"
-            style={styles.accountingInput}
-          />
-          <Pressable onPress={handleReconcile} disabled={reconciling} style={styles.accountingButton}>
-            <Text style={styles.accountingButtonText}>{reconciling ? "Saving" : "Reconcile"}</Text>
-          </Pressable>
-        </View>
-        {accountingError ? <Text style={styles.errorText}>{accountingError}</Text> : null}
       </View>
 
       {editing ? (
@@ -379,14 +267,6 @@ const styles = StyleSheet.create({
   rowStatus: { fontFamily: FONTS.bodyMedium, fontSize: 10, color: COLORS.inkSoft, marginTop: 3 },
   overStatus: { color: "#D35433" },
   allocationsRow: { flexDirection: "row", gap: 8, marginTop: 14 },
-  reservePanel: { borderRadius: 14, backgroundColor: "#EEF5F0", padding: 11, marginBottom: 9 },
-  reconcilePanel: { borderRadius: 14, backgroundColor: COLORS.cream, padding: 11, marginBottom: 8 },
-  reserveTitle: { fontFamily: FONTS.bodyBold, fontSize: 12, color: COLORS.ink },
-  reserveAmount: { fontFamily: FONTS.displayBold, fontSize: 14, color: "#2D8C65" },
-  accountingActionRow: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 8 },
-  accountingInput: { flex: 1, height: 36, borderWidth: 1.3, borderColor: COLORS.ink, borderRadius: 9, paddingHorizontal: 9, color: COLORS.ink, fontFamily: FONTS.bodyMedium, fontSize: 11 },
-  accountingButton: { minHeight: 36, paddingHorizontal: 10, borderRadius: 9, backgroundColor: COLORS.ink, alignItems: "center", justifyContent: "center" },
-  accountingButtonText: { fontFamily: FONTS.bodyBold, fontSize: 10, color: COLORS.cream },
   allocationPill: { flex: 1, borderRadius: 12, backgroundColor: COLORS.cream, padding: 9, borderWidth: 1, borderColor: "rgba(59, 51, 48, 0.12)" },
   allocationLabel: { fontFamily: FONTS.bodyBold, fontSize: 9 },
   allocationAmount: { fontFamily: FONTS.displayBold, fontSize: 14, color: COLORS.ink, marginTop: 3 },

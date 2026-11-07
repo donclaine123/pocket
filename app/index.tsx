@@ -107,8 +107,7 @@ import {
   CATEGORIES,
   Category,
   CategoryKey,
-  EXPENSE_CATEGORIES,
-  INCOME_CATEGORIES,
+  getEntryCategories,
   Txn,
   TxnType,
 } from "../types/transaction";
@@ -181,7 +180,6 @@ export default function HomeScreen() {
 
   const [txns, setTxns] = useState<Txn[]>([]);
   const [availableBalance, setAvailableBalance] = useState(0);
-  const [emergencyReserve, setEmergencyReserve] = useState(0);
   const [loaded, setLoaded] = useState(false);
   const scrollRef = useRef<any>(null);
 
@@ -722,9 +720,10 @@ export default function HomeScreen() {
     let spent = 0;
     let adjustments = 0;
     for (const t of scopedTxns) {
-      if (t.type === "income") income += t.amount;
+      if (t.type === "adjustment") adjustments += t.amount;
+      else if (t.category === "discrepancy") adjustments += t.type === "income" ? t.amount : -t.amount;
+      else if (t.type === "income") income += t.amount;
       else if (t.type === "expense") spent += t.amount;
-      else adjustments += t.amount;
     }
     const balance = income - spent + adjustments;
     const maxBar = Math.max(income, spent, 1);
@@ -746,7 +745,7 @@ export default function HomeScreen() {
     for (const t of scopedTxns) {
       if (stats[t.category]) {
         stats[t.category].count += 1;
-        if (t.type === "expense") {
+        if (t.type === "expense" && t.category !== "discrepancy") {
           stats[t.category].totalSpent += t.amount;
         }
       }
@@ -881,7 +880,7 @@ export default function HomeScreen() {
     setAmountError(null);
     let initialCategory: CategoryKey;
     if (selectedTag) {
-      const match = (initType === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).find(
+      const match = getEntryCategories(initType).find(
         (c) => c.key === selectedTag
       );
       initialCategory = match ? selectedTag : initType === "income" ? "salary" : "food_beverage";
@@ -971,7 +970,7 @@ export default function HomeScreen() {
               date: formDate,
               createdAt: targetCreatedAt,
               originalCurrency: currency.code,
-              budgetGroup: formType === "expense" ? formBudgetGroup : undefined,
+              budgetGroup: formType === "expense" && formCategory !== "discrepancy" ? formBudgetGroup : undefined,
             }
           : t
       );
@@ -988,7 +987,7 @@ export default function HomeScreen() {
         date: formDate,
         createdAt: targetCreatedAt,
         originalCurrency: currency.code,
-        budgetGroup: formType === "expense" ? formBudgetGroup : undefined,
+        budgetGroup: formType === "expense" && formCategory !== "discrepancy" ? formBudgetGroup : undefined,
       };
       const updatedList = [newTxn, ...txns];
       setTxns(updatedList);
@@ -997,24 +996,6 @@ export default function HomeScreen() {
     }
 
     setModalVisible(false);
-  };
-
-  const handleReconcileAvailable = async (difference: number) => {
-    const now = new Date();
-    const adjustment: Txn = {
-      id: uid(),
-      type: "adjustment",
-      amount: difference,
-      category: "discrepancy",
-      note: "Balance reconciliation",
-      date: toISODate(now),
-      createdAt: now.toISOString(),
-      originalCurrency: currency.code,
-    };
-    const updated = [adjustment, ...txns];
-    setTxns(updated);
-    await saveTransactions(updated);
-    safeHaptic.success();
   };
 
   // Prompt Delete Transaction
@@ -1233,7 +1214,7 @@ export default function HomeScreen() {
               </Text>
             </View>
 
-            {t.type === "expense" ? (
+            {t.type === "expense" && t.category !== "discrepancy" ? (
               <View
                 style={{
                   paddingHorizontal: 6,
@@ -1798,12 +1779,7 @@ export default function HomeScreen() {
           </Pressable>
 
           {/* Individual Tags */}
-          {(selectedTypeFilter === "income"
-            ? INCOME_CATEGORIES
-            : selectedTypeFilter === "expense"
-            ? EXPENSE_CATEGORIES
-            : CATEGORIES
-          ).map((c) => {
+          {(selectedTypeFilter ? getEntryCategories(selectedTypeFilter) : CATEGORIES).map((c) => {
             const active = selectedTag === c.key;
             const col = getCategoryColor(c.key);
             const count = categoryStats[c.key]?.count || 0;
@@ -1969,7 +1945,7 @@ export default function HomeScreen() {
 
   // Category spending distribution for Insights Tab
   const categoryExpenseBreakdown = useMemo(() => {
-    const expenses = (scopedTxns || []).filter((t) => t.type === "expense");
+    const expenses = (scopedTxns || []).filter((t) => t.type === "expense" && t.category !== "discrepancy");
     const totalExp = scopedTotals?.spent || 1;
     const catMap: Record<string, { amount: number; count: number }> = {};
     for (const t of expenses) {
@@ -2014,7 +1990,7 @@ export default function HomeScreen() {
 
   // Key metrics for Insights Tab
   const insightsMetrics = useMemo(() => {
-    const expenses = (scopedTxns || []).filter((t) => t.type === "expense");
+    const expenses = (scopedTxns || []).filter((t) => t.type === "expense" && t.category !== "discrepancy");
     const count = expenses.length;
     const total = scopedTotals?.spent || 0;
     const topCategory = categoryExpenseBreakdown[0] || null;
@@ -2209,7 +2185,7 @@ export default function HomeScreen() {
               const isExpanded = expandedInsightCategory === item.key;
               const catTxns = isExpanded
                 ? (scopedTxns || [])
-                    .filter((t) => t.type === "expense" && t.category === item.key)
+                    .filter((t) => t.type === "expense" && t.category !== "discrepancy" && t.category === item.key)
                     .sort((a, b) => getTxnTimestamp(b) - getTxnTimestamp(a))
                 : [];
 
@@ -2355,20 +2331,17 @@ export default function HomeScreen() {
             {isPositive ? "" : "−"}{currency.symbol}{fmt(Math.abs(availableBalance))}
           </Text>
           <Text style={[styles.emptySubtitle, { textAlign: "left", marginTop: 4 }]}>
-            Emergency reserve excluded: {currency.symbol}{fmt(emergencyReserve)}
+            After Salary savings allocation
           </Text>
         </NeoCard>
 
         <SalaryPlanCard
           transactions={displayTxns}
           currencySymbol={currency.symbol}
-          currencyCode={currency.code}
           onPlanSaved={() => updateAllWidgetsFromTxns(txns, currency.symbol)}
-          onAccountingChange={(available, reserve) => {
+          onAccountingChange={(available) => {
             setAvailableBalance(available);
-            setEmergencyReserve(reserve);
           }}
-          onReconcile={handleReconcileAvailable}
         />
 
         <NeoCard
@@ -3300,7 +3273,7 @@ export default function HomeScreen() {
                 onPress={() => {
                   safeHaptic.selection();
                   setFormType("expense");
-                  const nextCategory = EXPENSE_CATEGORIES.some((c) => c.key === formCategory)
+                  const nextCategory = getEntryCategories("expense").some((c) => c.key === formCategory)
                     ? formCategory
                     : "food_beverage";
                   setFormCategory(nextCategory);
@@ -3325,7 +3298,7 @@ export default function HomeScreen() {
                 onPress={() => {
                   safeHaptic.selection();
                   setFormType("income");
-                  if (!INCOME_CATEGORIES.some((c) => c.key === formCategory)) {
+                  if (!getEntryCategories("income").some((c) => c.key === formCategory)) {
                     setFormCategory("salary");
                   }
                 }}
@@ -3384,7 +3357,7 @@ export default function HomeScreen() {
             {/* Category Tag Selection */}
             <Text style={styles.fieldLabel}>Category Tag</Text>
             <View style={styles.categoryWrap}>
-              {(formType === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES).map((c) => {
+              {getEntryCategories(formType).map((c) => {
                 const active = formCategory === c.key;
                 const col = getCategoryColor(c.key);
                 return (
@@ -3393,7 +3366,7 @@ export default function HomeScreen() {
                     onPress={() => {
                       safeHaptic.selection();
                       setFormCategory(c.key);
-                      if (formType === "expense") {
+                      if (formType === "expense" && c.key !== "discrepancy") {
                         setFormBudgetGroup(getDefaultBudgetGroup(c.key));
                       }
                     }}
@@ -3420,7 +3393,7 @@ export default function HomeScreen() {
               })}
             </View>
 
-            {formType === "expense" ? (
+            {formType === "expense" && formCategory !== "discrepancy" ? (
               <View style={{ marginTop: 12 }}>
                 <Text style={styles.fieldLabel}>Budget group</Text>
                 <View style={{ flexDirection: "row", gap: 8 }}>

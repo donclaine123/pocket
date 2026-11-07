@@ -19,8 +19,7 @@ import { safeHaptic } from "../services/haptics";
 import {
   BudgetGroup,
   CategoryKey,
-  EXPENSE_CATEGORIES,
-  INCOME_CATEGORIES,
+  getEntryCategories,
   Txn,
   TxnType,
 } from "../types/transaction";
@@ -124,7 +123,7 @@ export default function QuickAddScreen() {
     }
   }, [isKeyboardVisible, fromWidget]);
 
-  const categories = type === "expense" ? EXPENSE_CATEGORIES : INCOME_CATEGORIES;
+  const categories = getEntryCategories(type);
 
   const handleAddPresetAmount = (addVal: number) => {
     safeHaptic.light();
@@ -155,7 +154,7 @@ export default function QuickAddScreen() {
         date: toISODate(now),
         createdAt: now.toISOString(),
         originalCurrency: currency.code,
-        budgetGroup: type === "expense" ? budgetGroup : undefined,
+        budgetGroup: type === "expense" && category !== "discrepancy" ? budgetGroup : undefined,
       };
 
       await saveTransactions([newTxn, ...existing]);
@@ -294,7 +293,7 @@ export default function QuickAddScreen() {
                 onPress={() => {
                   safeHaptic.selection();
                   setCategory(c.key);
-                  if (type === "expense") setBudgetGroup(getDefaultBudgetGroup(c.key));
+                  if (type === "expense" && c.key !== "discrepancy") setBudgetGroup(getDefaultBudgetGroup(c.key));
                 }}
                 style={[
                   styles.categoryChip,
@@ -322,7 +321,7 @@ export default function QuickAddScreen() {
           })}
         </ScrollView>
 
-        {type === "expense" ? (
+        {type === "expense" && category !== "discrepancy" ? (
           <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: 8 }}>
             <Text style={styles.sectionLabel}>BUDGET</Text>
             <View style={{ flexDirection: "row", gap: 6 }}>

@@ -21,7 +21,6 @@ import {
   getMonthlySalaryBudget,
   loadSalaryAllocation,
   loadSalaryBudgetStartMonth,
-  loadEmergencyReserveCorrection,
 } from "./salaryBudget";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { getPowerSyncDb } from "../database/powersync";
@@ -36,12 +35,11 @@ const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
 const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
 
 async function getWidgetAccounting(txns: Txn[], currencyCode: string) {
-  const [plan, startMonth, conversionEnabled, rates, reserveCorrection] = await Promise.all([
+  const [plan, startMonth, conversionEnabled, rates] = await Promise.all([
     loadSalaryAllocation(),
     loadSalaryBudgetStartMonth(),
     loadConversionEnabled(),
     getCachedRates(),
-    loadEmergencyReserveCorrection(currencyCode),
   ]);
   const budgetTxns = conversionEnabled
     ? txns.map((txn) => ({
@@ -56,7 +54,7 @@ async function getWidgetAccounting(txns: Txn[], currencyCode: string) {
     : txns;
   return {
     txns: budgetTxns,
-    totalBalance: getAvailableBalance(budgetTxns, plan, reserveCorrection),
+    totalBalance: getAvailableBalance(budgetTxns, plan),
     budgetSummary: getMonthlySalaryBudget(budgetTxns, plan, undefined, startMonth),
   };
 }
@@ -134,8 +132,8 @@ export async function updateAllWidgetsFromTxns(
     let todayIncome = 0;
 
     for (const t of accounting.txns) {
-      if (t.date.startsWith(todayStr) && t.type === "income") todayIncome += t.amount;
-      if (t.date.startsWith(todayStr) && t.type === "expense") todaySpent += t.amount;
+      if (t.date.startsWith(todayStr) && t.type === "income" && t.category !== "discrepancy") todayIncome += t.amount;
+      if (t.date.startsWith(todayStr) && t.type === "expense" && t.category !== "discrepancy") todaySpent += t.amount;
     }
 
     const recentTxns = accounting.txns.slice(0, 5).map((t) => ({
@@ -143,7 +141,9 @@ export async function updateAllWidgetsFromTxns(
       type: t.type,
       amount: t.amount,
       category: t.category,
-      budgetGroup: t.type === "expense" ? t.budgetGroup || getDefaultBudgetGroup(t.category) : undefined,
+      budgetGroup: t.type === "expense" && t.category !== "discrepancy"
+        ? t.budgetGroup || getDefaultBudgetGroup(t.category)
+        : undefined,
       note: t.note || "",
       date: t.date,
     }));
@@ -226,11 +226,11 @@ export async function refreshAllWidgets(forcedIsDark?: boolean): Promise<void> {
         widgetData.totalBalance = accounting.totalBalance;
         widgetData.budgetSummary = accounting.budgetSummary;
         widgetData.todayIncome = accounting.txns.reduce(
-          (total, txn) => total + (txn.date.startsWith(todayStr) && txn.type === "income" ? txn.amount : 0),
+          (total, txn) => total + (txn.date.startsWith(todayStr) && txn.type === "income" && txn.category !== "discrepancy" ? txn.amount : 0),
           0
         );
         widgetData.todaySpent = accounting.txns.reduce(
-          (total, txn) => total + (txn.date.startsWith(todayStr) && txn.type === "expense" ? txn.amount : 0),
+          (total, txn) => total + (txn.date.startsWith(todayStr) && txn.type === "expense" && txn.category !== "discrepancy" ? txn.amount : 0),
           0
         );
         widgetData.recentTxns = accounting.txns.slice(0, 5).map((txn) => ({
@@ -238,7 +238,7 @@ export async function refreshAllWidgets(forcedIsDark?: boolean): Promise<void> {
           type: txn.type,
           amount: txn.amount,
           category: txn.category,
-          budgetGroup: txn.type === "expense"
+          budgetGroup: txn.type === "expense" && txn.category !== "discrepancy"
             ? txn.budgetGroup || getDefaultBudgetGroup(txn.category)
             : undefined,
           note: txn.note || "",
@@ -386,8 +386,8 @@ export async function logPresetTransactionFromWidget(
   let todayIncome = 0;
 
   for (const t of accounting.txns) {
-    if (t.date.startsWith(todayStr) && t.type === "income") todayIncome += t.amount;
-    if (t.date.startsWith(todayStr) && t.type === "expense") todaySpent += t.amount;
+    if (t.date.startsWith(todayStr) && t.type === "income" && t.category !== "discrepancy") todayIncome += t.amount;
+    if (t.date.startsWith(todayStr) && t.type === "expense" && t.category !== "discrepancy") todaySpent += t.amount;
   }
 
   const recentTxns = accounting.txns.slice(0, 5).map((t) => ({
@@ -395,7 +395,9 @@ export async function logPresetTransactionFromWidget(
     type: t.type,
     amount: t.amount,
     category: t.category,
-    budgetGroup: t.type === "expense" ? t.budgetGroup || getDefaultBudgetGroup(t.category) : undefined,
+    budgetGroup: t.type === "expense" && t.category !== "discrepancy"
+      ? t.budgetGroup || getDefaultBudgetGroup(t.category)
+      : undefined,
     note: t.note || "",
     date: t.date,
   }));

@@ -5214,6 +5214,7 @@ const styles = StyleSheet.create({
   amountInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
+    minWidth: 0,
     backgroundColor: COLORS.paper,
     borderWidth: 2,
     borderColor: COLORS.cardBorder,
@@ -5240,6 +5241,7 @@ const styles = StyleSheet.create({
     color: "#E53935",
   },
   currencyPrefix: {
+    flexShrink: 0,
     fontFamily: FONTS.displayBold,
     fontSize: 26,
     color: COLORS.ink,
@@ -5247,6 +5249,9 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
+    width: 0,
+    minWidth: 0,
+    padding: 0,
     fontFamily: FONTS.displayBold,
     fontSize: 26,
     color: COLORS.ink,
@@ -5268,6 +5273,8 @@ const styles = StyleSheet.create({
     fontSize: 13,
   },
   noteInput: {
+    minWidth: 0,
+    alignSelf: "stretch",
     backgroundColor: COLORS.paper,
     borderWidth: 1.5,
     borderColor: COLORS.cardBorder,

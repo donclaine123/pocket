@@ -469,6 +469,7 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
   },
   amountBox: {
+    minWidth: 0,
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: COLORS.paper,
@@ -480,6 +481,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   currencyPrefix: {
+    flexShrink: 0,
     fontFamily: FONTS.displayBold,
     fontSize: 26,
     color: COLORS.ink,
@@ -487,6 +489,8 @@ const styles = StyleSheet.create({
   },
   amountInput: {
     flex: 1,
+    width: 0,
+    minWidth: 0,
     fontFamily: FONTS.displayBold,
     fontSize: 26,
     color: COLORS.ink,
@@ -550,6 +554,8 @@ const styles = StyleSheet.create({
     color: COLORS.ink,
   },
   noteInput: {
+    minWidth: 0,
+    alignSelf: "stretch",
     backgroundColor: COLORS.paper,
     borderRadius: 14,
     borderWidth: 1.5,

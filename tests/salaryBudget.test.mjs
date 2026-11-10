@@ -88,8 +88,8 @@ test("same-day expenses use their time relative to the latest salary, independen
   ];
   const summary = getSalaryBudget(txns, plan);
   assert.equal(summary.wantsSpent, 100);
-  assert.equal(summary.wantsBudget, 1_300);
-  assert.equal(summary.wantsBalance, 1_200);
+  assert.equal(summary.wantsBudget, 1_500);
+  assert.equal(summary.wantsBalance, 1_400);
   assert.deepEqual(getSalaryBudget([...txns].reverse(), plan), summary);
 });
 
@@ -101,4 +101,44 @@ test("a single Salary starts each bucket at zero spent against its allocation", 
   assert.equal(summary.wantsSpent, 0);
   assert.equal(summary.wantsBudget, 1_500);
   assert.equal(getAvailableBalance(txns, plan), 4_000);
+});
+
+test("expenses before the first payday do not reduce Needs or Wants", () => {
+  const txns = [
+    expense(2_438, "groceries", "2026-10-01"),
+    expense(4_134, "shopping", "2026-10-02"),
+    salary(5_000, "2026-11-11"),
+  ];
+  const summary = getSalaryBudget(txns, plan);
+  assert.equal(summary.needsBalance, 2_500);
+  assert.equal(summary.wantsBalance, 1_500);
+  assert.equal(summary.needsBudget, 2_500);
+  assert.equal(summary.wantsBudget, 1_500);
+  assert.equal(summary.needsSpent, 0);
+  assert.equal(summary.wantsSpent, 0);
+});
+
+test("expenses before any Salary leave both salary buckets inactive", () => {
+  const summary = getSalaryBudget([expense(500, "shopping", "2026-10-01")], plan);
+  assert.equal(summary.needsBalance, 0);
+  assert.equal(summary.wantsBalance, 0);
+  assert.equal(summary.wantsSpent, 0);
+  assert.equal(summary.wantsBudget, 0);
+});
+
+test("only spending after the first payday reduces carryover at the next payday", () => {
+  const txns = [
+    expense(1_000, "groceries", "2026-10-01"),
+    salary(5_000, "2026-10-15"),
+    expense(200, "groceries", "2026-10-16"),
+    salary(5_000, "2026-10-30"),
+    expense(100, "shopping", "2026-11-01"),
+  ];
+  const summary = getSalaryBudget(txns, plan);
+  assert.equal(summary.needsBalance, 4_800);
+  assert.equal(summary.needsBudget, 4_800);
+  assert.equal(summary.needsSpent, 0);
+  assert.equal(summary.wantsBudget, 3_000);
+  assert.equal(summary.wantsSpent, 100);
+  assert.equal(summary.wantsBalance, 2_900);
 });

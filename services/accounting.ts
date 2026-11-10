@@ -58,21 +58,25 @@ export function getSalaryBudget(
     (a.date || "").localeCompare(b.date || "") ||
     (Date.parse(a.createdAt || "") || 0) - (Date.parse(b.createdAt || "") || 0);
   let latestSalary: Txn | undefined;
+  let firstSalary: Txn | undefined;
   for (const txn of txns) {
-    if (txn.type === "income" && txn.category === "salary" &&
-        (!latestSalary || compare(txn, latestSalary) > 0)) {
-      latestSalary = txn;
+    if (txn.type === "income" && txn.category === "salary") {
+      if (!latestSalary || compare(txn, latestSalary) > 0) latestSalary = txn;
+      if (!firstSalary || compare(txn, firstSalary) < 0) firstSalary = txn;
     }
   }
   for (const txn of txns) {
     if (txn.type === "income" && txn.category === "salary") {
       salaryIncome += txn.amount;
-    } else if (txn.type === "expense" && txn.category !== "discrepancy") {
+    } else if (
+      txn.type === "expense" && txn.category !== "discrepancy" &&
+      firstSalary && compare(txn, firstSalary) >= 0
+    ) {
       const group = getTransactionBudgetGroup(txn);
       if (group === "needs") needsSpent += txn.amount;
       else wantsSpent += txn.amount;
       // shortcut: missing timestamps limit same-day payday ordering; save entry times for exact boundaries.
-      if (!latestSalary || compare(txn, latestSalary) >= 0) {
+      if (latestSalary && compare(txn, latestSalary) >= 0) {
         if (group === "needs") needsPaydaySpent += txn.amount;
         else wantsPaydaySpent += txn.amount;
       }

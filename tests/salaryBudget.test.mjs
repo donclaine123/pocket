@@ -31,6 +31,10 @@ test("expenses affect only their bucket; discrepancies and other income do not f
   assert.equal(summary.salaryIncome, 10_000);
   assert.equal(summary.needsBalance, 4_400);
   assert.equal(summary.wantsBalance, 2_600);
+  assert.equal(summary.needsSpent, 600);
+  assert.equal(summary.wantsSpent, 400);
+  assert.equal(summary.needsBudget, 5_000);
+  assert.equal(summary.wantsBudget, 3_000);
 });
 
 test("overspending remains deducted when a later salary arrives", () => {
@@ -56,4 +60,45 @@ test("Savings and Buffer allocations do not enter Needs or Wants balances", () =
   assert.equal(summary.needsBalance, 8_000);
   assert.equal(summary.wantsBalance, 4_000);
   assert.equal(getAvailableBalance(txns, allocation), 14_000);
+});
+
+test("payday resets the spent display and carries the remaining money into the new limit", () => {
+  const txns = [
+    salary(5_000, "2026-10-15"),
+    expense(500, "shopping", "2026-10-16"),
+    salary(8_333.33, "2026-10-30"),
+    expense(500, "shopping", "2026-11-01"),
+  ];
+  const summary = getSalaryBudget(txns, plan);
+  assert.equal(summary.wantsSpent, 500);
+  assert.equal(summary.wantsBudget, 3_500);
+  assert.equal(summary.wantsBalance, 3_000);
+  txns.push(salary(5_000, "2026-11-15"));
+  const nextPayday = getSalaryBudget(txns, plan);
+  assert.equal(nextPayday.wantsSpent, 0);
+  assert.equal(nextPayday.wantsBudget, 4_500);
+  assert.equal(nextPayday.wantsBalance, 4_500);
+});
+
+test("same-day expenses use their time relative to the latest salary, independent of list order", () => {
+  const txns = [
+    { ...expense(100, "shopping", "2026-11-11"), createdAt: "2026-11-11T02:00:00Z" },
+    { ...salary(5_000, "2026-11-11"), createdAt: "2026-11-11T01:00:00Z" },
+    { ...expense(200, "shopping", "2026-11-11"), createdAt: "2026-11-11T00:00:00Z" },
+  ];
+  const summary = getSalaryBudget(txns, plan);
+  assert.equal(summary.wantsSpent, 100);
+  assert.equal(summary.wantsBudget, 1_300);
+  assert.equal(summary.wantsBalance, 1_200);
+  assert.deepEqual(getSalaryBudget([...txns].reverse(), plan), summary);
+});
+
+test("a single Salary starts each bucket at zero spent against its allocation", () => {
+  const txns = [salary(5_000, "2026-11-11")];
+  const summary = getSalaryBudget(txns, plan);
+  assert.equal(summary.needsSpent, 0);
+  assert.equal(summary.needsBudget, 2_500);
+  assert.equal(summary.wantsSpent, 0);
+  assert.equal(summary.wantsBudget, 1_500);
+  assert.equal(getAvailableBalance(txns, plan), 4_000);
 });

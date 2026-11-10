@@ -11,6 +11,10 @@ export type SalaryBudgetSummary = SalaryAllocationPlan & {
   salaryIncome: number;
   needsBalance: number;
   wantsBalance: number;
+  needsSpent: number;
+  wantsSpent: number;
+  needsBudget: number;
+  wantsBudget: number;
 };
 
 const DEFAULT_BUDGET_GROUPS: Partial<Record<CategoryKey, BudgetGroup>> = {
@@ -42,12 +46,24 @@ export function getTransactionBudgetGroup(
 }
 
 export function getSalaryBudget(
-  txns: Pick<Txn, "type" | "category" | "amount" | "budgetGroup">[],
+  txns: Txn[],
   plan: SalaryAllocationPlan
 ): SalaryBudgetSummary {
   let salaryIncome = 0;
   let needsSpent = 0;
   let wantsSpent = 0;
+  let needsPaydaySpent = 0;
+  let wantsPaydaySpent = 0;
+  const compare = (a: Txn, b: Txn) =>
+    (a.date || "").localeCompare(b.date || "") ||
+    (Date.parse(a.createdAt || "") || 0) - (Date.parse(b.createdAt || "") || 0);
+  let latestSalary: Txn | undefined;
+  for (const txn of txns) {
+    if (txn.type === "income" && txn.category === "salary" &&
+        (!latestSalary || compare(txn, latestSalary) > 0)) {
+      latestSalary = txn;
+    }
+  }
   for (const txn of txns) {
     if (txn.type === "income" && txn.category === "salary") {
       salaryIncome += txn.amount;
@@ -55,14 +71,25 @@ export function getSalaryBudget(
       const group = getTransactionBudgetGroup(txn);
       if (group === "needs") needsSpent += txn.amount;
       else wantsSpent += txn.amount;
+      // shortcut: missing timestamps limit same-day payday ordering; save entry times for exact boundaries.
+      if (!latestSalary || compare(txn, latestSalary) >= 0) {
+        if (group === "needs") needsPaydaySpent += txn.amount;
+        else wantsPaydaySpent += txn.amount;
+      }
     }
   }
   // shortcut: all salary uses the current percentages; save payday allocations if historical rates must stay fixed.
+  const needsBalance = Math.round((salaryIncome * plan.needs / 100 - needsSpent) * 100) / 100;
+  const wantsBalance = Math.round((salaryIncome * plan.wants / 100 - wantsSpent) * 100) / 100;
   return {
     ...plan,
     salaryIncome,
-    needsBalance: Math.round((salaryIncome * plan.needs / 100 - needsSpent) * 100) / 100,
-    wantsBalance: Math.round((salaryIncome * plan.wants / 100 - wantsSpent) * 100) / 100,
+    needsBalance,
+    wantsBalance,
+    needsSpent: Math.round(needsPaydaySpent * 100) / 100,
+    wantsSpent: Math.round(wantsPaydaySpent * 100) / 100,
+    needsBudget: Math.round((needsBalance + needsPaydaySpent) * 100) / 100,
+    wantsBudget: Math.round((wantsBalance + wantsPaydaySpent) * 100) / 100,
   };
 }
 

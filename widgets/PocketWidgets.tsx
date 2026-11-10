@@ -148,11 +148,11 @@ function formatBudgetWidgetLine(summary: SalaryBudgetSummary | undefined, symbol
   if (!summary || (summary.salaryIncome <= 0 && summary.needsBalance === 0 && summary.wantsBalance === 0)) {
     return "Log Salary to see budget";
   }
-  if (!Number.isFinite(summary.needsBalance) || !Number.isFinite(summary.wantsBalance)) {
+  if (![summary.needsSpent, summary.wantsSpent, summary.needsBudget, summary.wantsBudget].every(Number.isFinite)) {
     return "Open Pocket to refresh budget";
   }
   const amount = (value: number) => `${symbol}${Math.round(value).toLocaleString("en-US")}`;
-  return `Left: N ${amount(summary.needsBalance)} · W ${amount(summary.wantsBalance)}`;
+  return `N ${amount(summary.needsSpent)}/${amount(summary.needsBudget)} · W ${amount(summary.wantsSpent)}/${amount(summary.wantsBudget)}`;
 }
 
 function isOverBudget(summary?: SalaryBudgetSummary): boolean {

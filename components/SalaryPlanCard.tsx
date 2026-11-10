@@ -116,20 +116,22 @@ export function SalaryPlanCard({
 
   const renderBudgetRow = (key: "needs" | "wants", label: string, color: string) => {
     const remaining = key === "needs" ? summary.needsBalance : summary.wantsBalance;
+    const spent = key === "needs" ? summary.needsSpent : summary.wantsSpent;
+    const limit = key === "needs" ? summary.needsBudget : summary.wantsBudget;
     const over = remaining < 0;
 
     return (
       <View key={key} style={styles.budgetRow}>
         <View style={styles.rowHeading}>
           <Text style={[styles.rowTitle, { color }]}>{label} · {plan[key]}%</Text>
-          <Text style={[styles.rowAmount, over && styles.overStatus]}>{money(remaining, currencySymbol)}</Text>
+          <Text style={[styles.rowAmount, over && styles.overStatus]}>{money(spent, currencySymbol)} / {money(limit, currencySymbol)}</Text>
         </View>
         <Text style={[styles.rowStatus, over && styles.overStatus]}>
           {summary.salaryIncome === 0 && remaining === 0
             ? "Log income as Salary to activate this budget"
             : over
             ? `Over by ${money(-remaining, currencySymbol)}`
-            : "Available in this bucket"}
+            : `${money(remaining, currencySymbol)} remaining`}
         </Text>
       </View>
     );
@@ -149,7 +151,7 @@ export function SalaryPlanCard({
             Total recorded Salary: {money(summary.salaryIncome, currencySymbol)}
           </Text>
           <Text style={styles.subtitle}>
-            Each payday adds funds. Expenses reduce the balances.
+            Spent since last payday / budget including carryover.
           </Text>
         </View>
         <Pressable

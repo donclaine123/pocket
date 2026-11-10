@@ -7,10 +7,9 @@ import { Txn } from "../types/transaction";
 import { getAvailableBalance } from "../services/accounting";
 import {
   DEFAULT_SALARY_ALLOCATION,
-  getMonthlySalaryBudget,
+  getSalaryBudget,
   isValidSalaryAllocation,
   loadSalaryAllocation,
-  loadSalaryBudgetStartMonth,
   SalaryAllocationPlan,
   saveSalaryAllocation,
 } from "../services/salaryBudget";
@@ -57,14 +56,6 @@ function money(amount: number, symbol: string): string {
   })}`;
 }
 
-function formatMonth(month: string): string {
-  const [year, monthNumber] = month.split("-").map(Number);
-  return new Date(year, monthNumber - 1, 1).toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-}
-
 export function SalaryPlanCard({
   transactions,
   currencySymbol,
@@ -72,23 +63,21 @@ export function SalaryPlanCard({
   onAccountingChange,
 }: SalaryPlanCardProps) {
   const [plan, setPlan] = useState(DEFAULT_SALARY_ALLOCATION);
-  const [budgetStartMonth, setBudgetStartMonth] = useState<string>();
   const [inputs, setInputs] = useState<PlanInputs>(asInputs(DEFAULT_SALARY_ALLOCATION));
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    Promise.all([loadSalaryAllocation(), loadSalaryBudgetStartMonth()]).then(([saved, startMonth]) => {
+    loadSalaryAllocation().then((saved) => {
       setPlan(saved);
       setInputs(asInputs(saved));
-      setBudgetStartMonth(startMonth);
     });
   }, []);
 
   const summary = useMemo(
-    () => getMonthlySalaryBudget(transactions, plan, undefined, budgetStartMonth),
-    [transactions, plan, budgetStartMonth]
+    () => getSalaryBudget(transactions, plan),
+    [transactions, plan]
   );
   const availableBalance = getAvailableBalance(transactions, plan);
   useEffect(() => {
@@ -100,8 +89,6 @@ export function SalaryPlanCard({
     0
   );
   const draftIsValid = Object.values(draft).every(Number.isFinite) && isValidSalaryAllocation(draft);
-  const now = new Date();
-  const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 
   const handleSave = async () => {
     if (!draftIsValid || saving) {
@@ -128,27 +115,21 @@ export function SalaryPlanCard({
   };
 
   const renderBudgetRow = (key: "needs" | "wants", label: string, color: string) => {
-    const spent = key === "needs" ? summary.needsSpent : summary.wantsSpent;
-    const limit = key === "needs" ? summary.needsBudget : summary.wantsBudget;
-    const remaining = limit - spent;
+    const remaining = key === "needs" ? summary.needsBalance : summary.wantsBalance;
     const over = remaining < 0;
-    const progress = limit > 0 ? Math.min(spent / limit, 1) : 0;
 
     return (
       <View key={key} style={styles.budgetRow}>
         <View style={styles.rowHeading}>
           <Text style={[styles.rowTitle, { color }]}>{label} · {plan[key]}%</Text>
-          <Text style={styles.rowAmount}>{money(spent, currencySymbol)} / {money(limit, currencySymbol)}</Text>
-        </View>
-        <View style={styles.track}>
-          <View style={[styles.fill, { width: `${progress * 100}%`, backgroundColor: over ? "#D35433" : color }]} />
+          <Text style={[styles.rowAmount, over && styles.overStatus]}>{money(remaining, currencySymbol)}</Text>
         </View>
         <Text style={[styles.rowStatus, over && styles.overStatus]}>
-          {summary.salaryIncome === 0 && limit === 0
+          {summary.salaryIncome === 0 && remaining === 0
             ? "Log income as Salary to activate this budget"
             : over
             ? `Over by ${money(-remaining, currencySymbol)}`
-            : `${money(remaining, currencySymbol)} remaining`}
+            : "Available in this bucket"}
         </Text>
       </View>
     );
@@ -163,14 +144,12 @@ export function SalaryPlanCard({
     >
       <View style={styles.header}>
         <View style={{ flex: 1 }}>
-          <Text style={styles.eyebrow}>MONTHLY SALARY PLAN</Text>
+          <Text style={styles.eyebrow}>SALARY PLAN</Text>
           <Text style={styles.subtitle}>
-            {summary.salaryIncome > 0
-              ? `Salary basis: ${money(summary.salaryIncome, currencySymbol)} · ${summary.salaryIncomeMonth === currentMonth ? "this month" : `from ${formatMonth(summary.salaryIncomeMonth!)}`}`
-              : `Salary this month: ${money(0, currencySymbol)}`}
+            Total recorded Salary: {money(summary.salaryIncome, currencySymbol)}
           </Text>
           <Text style={styles.subtitle}>
-            Carryover: Needs {money(summary.needsCarryover, currencySymbol)} · Wants {money(summary.wantsCarryover, currencySymbol)}
+            Each payday adds funds. Expenses reduce the balances.
           </Text>
         </View>
         <Pressable
@@ -241,7 +220,7 @@ export function SalaryPlanCard({
                 <View key={row.key} style={styles.allocationPill}>
                   <Text style={[styles.allocationLabel, { color: row.color }]}>{row.label} · {plan[row.key]}%</Text>
                   <Text style={styles.allocationAmount}>{money(value, currencySymbol)}</Text>
-                  <Text style={styles.allocationFootnote}>allocated</Text>
+                  <Text style={styles.allocationFootnote}>allocated from recorded Salary</Text>
                 </View>
               );
             })}
@@ -262,8 +241,6 @@ const styles = StyleSheet.create({
   rowHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   rowTitle: { fontFamily: FONTS.bodyBold, fontSize: 12 },
   rowAmount: { fontFamily: FONTS.bodyBold, fontSize: 11, color: COLORS.ink },
-  track: { height: 7, borderRadius: 99, backgroundColor: "#EFE7DA", overflow: "hidden", marginTop: 6 },
-  fill: { height: "100%", borderRadius: 99 },
   rowStatus: { fontFamily: FONTS.bodyMedium, fontSize: 10, color: COLORS.inkSoft, marginTop: 3 },
   overStatus: { color: "#D35433" },
   allocationsRow: { flexDirection: "row", gap: 8, marginTop: 14 },

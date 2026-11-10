@@ -145,16 +145,19 @@ function formatAmount(num: number, symbol: string): string {
 }
 
 function formatBudgetWidgetLine(summary: SalaryBudgetSummary | undefined, symbol: string): string {
-  if (!summary || (summary.salaryIncome <= 0 && summary.needsBudget <= 0 && summary.wantsBudget <= 0)) {
+  if (!summary || (summary.salaryIncome <= 0 && summary.needsBalance === 0 && summary.wantsBalance === 0)) {
     return "Log Salary to see budget";
   }
+  if (!Number.isFinite(summary.needsBalance) || !Number.isFinite(summary.wantsBalance)) {
+    return "Open Pocket to refresh budget";
+  }
   const amount = (value: number) => `${symbol}${Math.round(value).toLocaleString("en-US")}`;
-  return `N ${amount(summary.needsSpent)}/${amount(summary.needsBudget)} · W ${amount(summary.wantsSpent)}/${amount(summary.wantsBudget)}`;
+  return `Left: N ${amount(summary.needsBalance)} · W ${amount(summary.wantsBalance)}`;
 }
 
-function isOverMonthlyBudget(summary?: SalaryBudgetSummary): boolean {
+function isOverBudget(summary?: SalaryBudgetSummary): boolean {
   return Boolean(summary && (
-    summary.needsSpent > summary.needsBudget || summary.wantsSpent > summary.wantsBudget
+    summary.needsBalance < 0 || summary.wantsBalance < 0
   ));
 }
 
@@ -408,7 +411,7 @@ export function Balance2x1Widget(props: Partial<WidgetDataProps>) {
               style={{
                 fontSize: 6.5,
                 fontWeight: "bold",
-                color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+                color: isOverBudget(budgetSummary) ? theme.coral : theme.textMuted,
                 marginTop: 2,
               }}
               maxLines={1}
@@ -561,7 +564,7 @@ export function Banner4x1Widget(props: Partial<WidgetDataProps>) {
                 style={{
                   fontSize: 6.5,
                   fontWeight: "bold",
-                  color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+                  color: isOverBudget(budgetSummary) ? theme.coral : theme.textMuted,
                   marginTop: 1,
                 }}
                 maxLines={1}
@@ -783,7 +786,7 @@ export function Glance2x2Widget(props: Partial<WidgetDataProps>) {
             style={{
               fontSize: 6.5,
               fontWeight: "bold",
-              color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+              color: isOverBudget(budgetSummary) ? theme.coral : theme.textMuted,
               marginVertical: 1,
             }}
             maxLines={1}
@@ -1071,7 +1074,7 @@ export function Dashboard4x2Widget(props: Partial<WidgetDataProps>) {
                   style={{
                     fontSize: 6.5,
                     fontWeight: "bold",
-                    color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+                    color: isOverBudget(budgetSummary) ? theme.coral : theme.textMuted,
                     marginTop: 2,
                   }}
                   maxLines={1}
@@ -1553,7 +1556,7 @@ export function FullJournal4x4Widget(props: Partial<WidgetDataProps>) {
             style={{
               fontSize: 7,
               fontWeight: "bold",
-              color: isOverMonthlyBudget(budgetSummary) ? theme.coral : theme.textMuted,
+              color: isOverBudget(budgetSummary) ? theme.coral : theme.textMuted,
               marginVertical: 3,
             }}
             maxLines={1}

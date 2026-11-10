@@ -18,9 +18,8 @@ import { DEFAULT_CURRENCY } from "../constants/currencies";
 import { convertAmount, getCachedRates, loadConversionEnabled } from "./exchangeService";
 import {
   getDefaultBudgetGroup,
-  getMonthlySalaryBudget,
+  getSalaryBudget,
   loadSalaryAllocation,
-  loadSalaryBudgetStartMonth,
 } from "./salaryBudget";
 import { isSupabaseConfigured, supabase } from "../database/supabase";
 import { getPowerSyncDb } from "../database/powersync";
@@ -35,9 +34,8 @@ const GUEST_STORAGE_KEY = "@pocket_guest_journal_v2";
 const CURRENCY_STORAGE_KEY = "@pocket_currency_pref";
 
 async function getWidgetAccounting(txns: Txn[], currencyCode: string) {
-  const [plan, startMonth, conversionEnabled, rates] = await Promise.all([
+  const [plan, conversionEnabled, rates] = await Promise.all([
     loadSalaryAllocation(),
-    loadSalaryBudgetStartMonth(),
     loadConversionEnabled(),
     getCachedRates(),
   ]);
@@ -55,7 +53,7 @@ async function getWidgetAccounting(txns: Txn[], currencyCode: string) {
   return {
     txns: budgetTxns,
     totalBalance: getAvailableBalance(budgetTxns, plan),
-    budgetSummary: getMonthlySalaryBudget(budgetTxns, plan, undefined, startMonth),
+    budgetSummary: getSalaryBudget(budgetTxns, plan),
   };
 }
 

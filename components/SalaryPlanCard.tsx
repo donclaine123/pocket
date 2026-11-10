@@ -145,7 +145,7 @@ export function SalaryPlanCard({
       style={styles.card}
     >
       <View style={styles.header}>
-        <View style={{ flex: 1 }}>
+        <View style={styles.headerText}>
           <Text style={styles.eyebrow}>SALARY PLAN</Text>
           <Text style={styles.subtitle}>
             Total recorded Salary: {money(summary.salaryIncome, currencySymbol)}
@@ -192,6 +192,7 @@ export function SalaryPlanCard({
           {error ? <Text style={styles.errorText}>{error}</Text> : null}
           <View style={styles.actionRow}>
             <Pressable
+              accessibilityRole="button"
               onPress={() => {
                 setInputs(asInputs(plan));
                 setEditing(false);
@@ -202,6 +203,7 @@ export function SalaryPlanCard({
               <Text style={styles.cancelText}>Cancel</Text>
             </Pressable>
             <Pressable
+              accessibilityRole="button"
               onPress={handleSave}
               disabled={!draftIsValid || saving}
               style={[styles.saveButton, (!draftIsValid || saving) && styles.disabledButton]}
@@ -234,11 +236,12 @@ export function SalaryPlanCard({
 }
 
 const styles = StyleSheet.create({
-  card: { padding: 16, marginBottom: 16 },
-  header: { flexDirection: "row", alignItems: "center", marginBottom: 12 },
+  card: { alignSelf: "stretch", minWidth: 0, padding: 16, marginBottom: 16 },
+  header: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 12 },
+  headerText: { flex: 1, minWidth: 0 },
   eyebrow: { fontFamily: FONTS.bodyBold, fontSize: 10, letterSpacing: 1, color: COLORS.inkSoft },
   subtitle: { fontFamily: FONTS.bodyMedium, fontSize: 11, color: COLORS.inkSoft, marginTop: 3 },
-  iconButton: { width: 34, height: 34, borderRadius: 10, borderWidth: 1.5, borderColor: COLORS.ink, backgroundColor: COLORS.cream, alignItems: "center", justifyContent: "center" },
+  iconButton: { width: 44, height: 44, flexShrink: 0, borderRadius: 10, borderWidth: 1.5, borderColor: COLORS.ink, backgroundColor: COLORS.cream, alignItems: "center", justifyContent: "center" },
   budgetRow: { marginTop: 8 },
   rowHeading: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   rowTitle: { fontFamily: FONTS.bodyBold, fontSize: 12 },
@@ -250,18 +253,18 @@ const styles = StyleSheet.create({
   allocationLabel: { fontFamily: FONTS.bodyBold, fontSize: 9 },
   allocationAmount: { fontFamily: FONTS.displayBold, fontSize: 14, color: COLORS.ink, marginTop: 3 },
   allocationFootnote: { fontFamily: FONTS.bodyMedium, fontSize: 9, color: COLORS.inkSoft },
-  editor: { gap: 8 },
-  editRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 3 },
-  editLabel: { fontFamily: FONTS.bodyBold, fontSize: 12 },
-  percentInputWrap: { flexDirection: "row", alignItems: "center", width: 90, height: 36, borderWidth: 1.5, borderColor: COLORS.ink, borderRadius: 10, backgroundColor: COLORS.cream, paddingHorizontal: 8 },
-  percentInput: { flex: 1, padding: 0, textAlign: "right", fontFamily: FONTS.bodyBold, color: COLORS.ink, fontSize: 13 },
-  percentSign: { fontFamily: FONTS.bodyBold, color: COLORS.inkSoft, marginLeft: 3 },
+  editor: { alignSelf: "stretch", minWidth: 0, gap: 8 },
+  editRow: { flexDirection: "row", alignItems: "center", gap: 12, minWidth: 0, paddingVertical: 3 },
+  editLabel: { flex: 1, minWidth: 0, fontFamily: FONTS.bodyBold, fontSize: 12 },
+  percentInputWrap: { flexDirection: "row", alignItems: "center", flexShrink: 0, width: 96, height: 44, borderWidth: 1.5, borderColor: COLORS.ink, borderRadius: 10, backgroundColor: COLORS.cream, paddingHorizontal: 10 },
+  percentInput: { flex: 1, width: 0, minWidth: 0, padding: 0, textAlign: "right", fontFamily: FONTS.bodyBold, color: COLORS.ink, fontSize: 16 },
+  percentSign: { flexShrink: 0, fontFamily: FONTS.bodyBold, color: COLORS.inkSoft, marginLeft: 3 },
   totalText: { fontFamily: FONTS.bodyBold, fontSize: 11, color: COLORS.inkSoft, textAlign: "right", marginTop: 4 },
   errorText: { fontFamily: FONTS.bodyMedium, fontSize: 10, color: "#D35433" },
-  actionRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 6 },
-  cancelButton: { paddingHorizontal: 12, minHeight: 36, justifyContent: "center" },
+  actionRow: { flexDirection: "row", flexWrap: "wrap", justifyContent: "flex-end", gap: 8, marginTop: 6 },
+  cancelButton: { paddingHorizontal: 12, minHeight: 44, justifyContent: "center" },
   cancelText: { fontFamily: FONTS.bodyBold, fontSize: 11, color: COLORS.inkSoft },
-  saveButton: { flexDirection: "row", alignItems: "center", gap: 5, minHeight: 36, paddingHorizontal: 12, borderRadius: 10, backgroundColor: COLORS.ink },
+  saveButton: { flexDirection: "row", alignItems: "center", gap: 5, minHeight: 44, paddingHorizontal: 12, borderRadius: 10, backgroundColor: COLORS.ink },
   saveText: { fontFamily: FONTS.bodyBold, fontSize: 11, color: COLORS.cream },
   disabledButton: { opacity: 0.45 },
 });
